@@ -1,0 +1,11 @@
+{
+  "name": "DeskleafCalendar",
+  "version": "0.1.0",
+  "description": "Deskleaf calendar payload model, change hashes, day layout and wake schedule. Host-testable, no Arduino dependencies.",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "include"
+  },
+  "frameworks": "*",
+  "platforms": "*"
+}

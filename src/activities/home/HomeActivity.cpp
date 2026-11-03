@@ -34,6 +34,9 @@ int HomeActivity::getMenuItemCount() const {
   if (hasLibrarySlot()) {
     count++;
   }
+  if (hasCalendarSlot()) {
+    count++;
+  }
   return count;
 }
 
@@ -327,6 +330,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
         break;
+      case HomeMenuItem::CALENDAR:
+        onCalendarOpen();
+        break;
       default:
         break;
     }
@@ -533,6 +539,11 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin() + 2, Plugins);
   }
 
+  if (hasCalendarSlot()) {
+    menuItems.push_back(tr(STR_CALENDAR));
+    menuIcons.push_back(Recent);
+  }
+
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
     // Insert Continue Reading at the top if enabled in theme
     menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
@@ -578,3 +589,9 @@ void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 void HomeActivity::onOpdsBrowserOpen() { activityManager.goToBrowser(); }
 
 void HomeActivity::onPluginsOpen() { activityManager.goToPlugins(hasOpdsServers); }
+
+void HomeActivity::onCalendarOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToCalendar();
+#endif
+}

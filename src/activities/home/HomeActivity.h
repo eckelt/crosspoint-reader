@@ -22,6 +22,12 @@ class HomeActivity final : public Activity {
   // The home "library" slot (index 2) shows Plugins when any plugin is
   // installed, otherwise OPDS. The index converters gate on its presence.
   bool hasLibrarySlot() const { return hasPlugins || hasOpdsServers; }
+  // Deskleaf calendar entry after Settings; the cover-grid home keeps its fixed action set.
+#if DESKLEAF_CALENDAR
+  bool hasCalendarSlot() const { return !coverGridUi; }
+#else
+  bool hasCalendarSlot() const { return false; }
+#endif
   bool hasContinueReading = false;
   bool coverRendered = false;      // Track if cover has been rendered once
   bool coverBufferStored = false;  // Track if cover buffer is stored
@@ -50,6 +56,8 @@ class HomeActivity final : public Activity {
     if (item == HomeMenuItem::FILE_TRANSFER) return i;
     ++i;
     if (item == HomeMenuItem::SETTINGS_MENU) return i;
+    ++i;
+    if (item == HomeMenuItem::CALENDAR) return i;
     return 0;
   }
 
@@ -60,7 +68,10 @@ class HomeActivity final : public Activity {
     if (idx == i++) return HomeMenuItem::LIBRARY;
     if (hasOpdsUrl && idx == i++) return HomeMenuItem::OPDS_BROWSER;
     if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
-    if (idx == i) return HomeMenuItem::SETTINGS_MENU;
+    if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
+#if DESKLEAF_CALENDAR
+    if (idx == i) return HomeMenuItem::CALENDAR;
+#endif
     return HomeMenuItem::NONE;
   }
   void onRecentBookSelected(const std::string& path);
@@ -70,6 +81,7 @@ class HomeActivity final : public Activity {
   void onFileTransferOpen();
   void onOpdsBrowserOpen();
   void onPluginsOpen();
+  void onCalendarOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image

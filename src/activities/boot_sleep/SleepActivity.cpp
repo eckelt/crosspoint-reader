@@ -1,5 +1,9 @@
 #include "SleepActivity.h"
 
+#if DESKLEAF_CALENDAR
+#include "deskleaf/DeskleafCalendarService.h"
+#endif
+
 #include <BitmapHelpers.h>
 #include <BmpToBmpConverter.h>
 #include <Epub.h>
@@ -726,6 +730,13 @@ void SleepActivity::onEnter() {
     }
     return renderTransparentCustomSleepScreen();
   }
+
+#if DESKLEAF_CALENDAR
+  if (sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+    // Draws from the stored payload; the timer wake fetches fresh data.
+    return deskleaf::CALENDAR.renderSleepScreen(renderer);
+  }
+#endif
 
   // Show popup with reader orientation only when going to sleep from reader
   if (APP_STATE.lastSleepFromReader) {

@@ -1,0 +1,73 @@
+name: Deskleaf X4 Pro firmware
+
+# Fork-only: builds the X4 Pro firmware with the Deskleaf calendar and keeps
+# firmware.bin as a run artifact (flash via crosspointreader.com -> Custom .bin).
+on:
+  push:
+    branches: ['deskleaf-*']
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: v7.4.2
+          path: .hostdeps/ArduinoJson
+      - name: Calendar host tests
+        run: ARDUINOJSON_SRC=.hostdeps/ArduinoJson/src ./test/deskleaf_calendar/run.sh
+
+  firmware:
+    runs-on: ubuntu-latest
+    needs: host-tests
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: false
+
+      - name: Install PlatformIO Core
+        run: |
+          uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+          uv pip install --system -U "littlefs-python>=0.16.0" "fatfs-ng>=0.1.14" "pyyaml>=6.0.2" \
+            "rich-click>=1.8.6" "zopfli>=0.2.2" "intelhex>=2.3.0" "rich>=14.0.0" "urllib3<2" \
+            "cryptography>=45.0.3" "certifi>=2025.8.3" "ecdsa>=0.19.1" "bitstring>=4.3.1" \
+            "reedsolo>=1.5.3,<1.8" "esp-idf-size>=2.0.0" "esp-coredump>=1.14.0"
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-v3-${{ runner.os }}-x4pro-${{ hashFiles('platformio.ini', 'scripts/patch_pioarduino_cache.py') }}
+          restore-keys: pio-v3-${{ runner.os }}-x4pro-
+
+      - name: Pin pioarduino core inside the platform penv
+        run: |
+          set -euo pipefail
+          pio pkg install -e x4pro
+          uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
+
+      - name: Build x4pro firmware
+        run: |
+          set -euo pipefail
+          pio run -e x4pro | tee pio.log
+          grep -E "RAM:|Flash:" pio.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: firmware-x4pro-deskleaf
+          path: .pio/build/x4pro/firmware.bin
+          if-no-files-found: error

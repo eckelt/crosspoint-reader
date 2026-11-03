@@ -1,3 +1,8 @@
+#if DESKLEAF_CALENDAR
+#include <esp_sleep.h>
+
+#include "deskleaf/DeskleafCalendarService.h"
+#endif
 #include <Arduino.h>
 #include <BlePageTurner.h>
 #include <BoardConfig.h>
@@ -519,6 +524,12 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
+#if DESKLEAF_CALENDAR
+  // Quick Resume shows the page instead of the calendar; nothing to refresh then.
+  if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR && !isQuickResumeSleep) {
+    deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/true);
+  }
+#endif
   powerManager.startDeepSleep(gpio, wakeOnHeldButton);
 }
 
@@ -562,6 +573,28 @@ void setupDisplayAndFonts(bool seamless = false) {
 
   LOG_DBG("MAIN", "Fonts setup");
 }
+
+#if DESKLEAF_CALENDAR
+// Timer wake of the sleep-screen calendar: sync with the bridge, redraw if
+// today's view changed and sleep again without starting the UI. The power
+// button keeps its normal wake path.
+static void runCalendarTimerWake() {
+  LOG_INF("MAIN", "Calendar timer wake");
+  setupDisplayAndFonts(/*seamless=*/true);
+  // Any button press cancels the refresh and boots normally, as a wake would.
+  if (!deskleaf::CALENDAR.backgroundRefresh(renderer, [] { return gpio.rawInputActive(); })) {
+    LOG_INF("MAIN", "Calendar refresh interrupted by input; restarting");
+    trustedtime::note();
+    Storage.prepareForDeepSleep();
+    esp_restart();
+  }
+  trustedtime::note();
+  display.deepSleep();
+  Storage.prepareForDeepSleep();
+  deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/false);
+  powerManager.startDeepSleep(gpio);
+}
+#endif
 
 void setup() {
   BoardConfig::holdPowerRails();
@@ -690,6 +723,14 @@ void setup() {
   trustedtime::init();
   bleturner::begin(pageturner::host, SETTINGS.ble);
 
+#if DESKLEAF_CALENDAR
+  // Before the frontlight restore: a background refresh must stay dark.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER &&
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+    runCalendarTimerWake();
+  }
+#endif
+
   // Brightness and warmth are always restored. A normal wake starts with the
   // light off unless Restore Light on Wake is enabled; silent maintenance
   // reboots replay the live state captured at restart, so they neither go dark
@@ -710,6 +751,11 @@ void setup() {
           !(FREEINK_DEVICE_PICCO && gpio.isUsbConnected())) {
         LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
         Storage.prepareForDeepSleep();
+#if DESKLEAF_CALENDAR
+        if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+          deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/false);
+        }
+#endif
         powerManager.startDeepSleep(gpio);
       }
       wakePowerReleasePending = true;

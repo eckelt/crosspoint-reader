@@ -1,0 +1,40 @@
+#pragma once
+// Deskleaf calendar: day, week and month views of the payload the Deskleaf
+// bridge sends over BLE. Left/Right (or swipes) page, Confirm (or a tap on the
+// header) switches the view, a long press on Confirm syncs, Back goes home.
+// In the month view a tap on a day opens that day.
+#include <DeskleafCalendar.h>
+
+#include <vector>
+
+#include "activities/Activity.h"
+#include "deskleaf/DeskleafCalendarService.h"
+
+class CalendarActivity final : public Activity {
+ public:
+  CalendarActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
+      : Activity("Calendar", renderer, mappedInput) {}
+  void onEnter() override;
+  void onExit() override;
+  void loop() override;
+  void render(RenderLock&&) override;
+  bool preventAutoSleep() override { return syncing; }
+
+ private:
+  enum class View : uint8_t { Day, Week, Month };
+
+  void step(int direction);
+  void cycleView();
+  void syncNow();
+  int contentTop() const;
+
+  std::vector<deskleaf::CalEvent> events;
+  deskleaf::CalendarState state;
+  View view = View::Day;
+  deskleaf::Date today{2026, 1, 1};
+  deskleaf::Date cursor{2026, 1, 1};  // shown day; week and month derive from it
+  bool clockValid = false;
+  bool syncing = false;
+  bool syncPending = false;
+  int headerHeight = 0;
+};
