@@ -23,7 +23,9 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   title, then time · organizer +attendees, then location; series, attachment
   and Obsidian-note icons (copied from deskleaf-display `include/Icons.h`).
 - A free day (and a completely free weekend) shows the Deskleaf free-day
-  motif (`src/deskleaf/FreeDayArtData.cpp`, copied from deskleaf-display).
+  motif from deskleaf-display. `scripts/deskleaf_freeday_art.py` generates
+  `src/deskleaf/FreeDayArtData.cpp` from it and widens the sides so the sky
+  fades into the paper on the wider screen.
 - Multi-day events show on every day they cover. Timed ones keep their times
   on the first day ("ab 09:00") and the last day ("bis 17:00"); fully covered
   days in between and all-day events show as day bars. Data older than
