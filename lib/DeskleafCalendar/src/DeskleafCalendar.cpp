@@ -88,6 +88,18 @@ bool hasAny(const std::string& haystack, std::initializer_list<const char*> need
   return false;
 }
 
+// True if word appears in s on its own, not inside a longer word ("Call", not "Callcenter").
+bool hasWord(const std::string& s, const char* word) {
+  const size_t n = std::strlen(word);
+  const auto isAlnum = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0; };
+  for (size_t pos = s.find(word); pos != std::string::npos; pos = s.find(word, pos + 1)) {
+    const bool startOk = pos == 0 || !isAlnum(s[pos - 1]);
+    const bool endOk = pos + n == s.size() || !isAlnum(s[pos + n]);
+    if (startOk && endOk) return true;
+  }
+  return false;
+}
+
 // "+49 40 1234567", "040/123 45 67", "tel:+49...": mostly digits, at least 6.
 bool looksLikePhone(const std::string& s) {
   if (s.find("tel:") != std::string::npos) return true;
@@ -120,7 +132,8 @@ MeetingPlatform CalEvent::platform() const {
   if (hasAny(text, {"meet.google.com", "google meet"})) return MeetingPlatform::Meet;
   if (hasAny(text, {"linkedin.com"}) || subject.find("LinkedIn") != std::string::npos) return MeetingPlatform::LinkedIn;
   const std::string title = lower(subject);
-  if (looksLikePhone(location) || hasAny(loc, {"telefon", "anruf", "phone"}) ||
+  // A video platform was ruled out above, so a bare "Call" as the place is a phone call.
+  if (looksLikePhone(location) || hasAny(loc, {"telefon", "anruf", "phone"}) || hasWord(loc, "call") ||
       hasAny(title, {"telefon", "anruf", "phone call"})) {
     return MeetingPlatform::Phone;
   }

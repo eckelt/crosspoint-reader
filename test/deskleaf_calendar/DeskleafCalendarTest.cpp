@@ -113,6 +113,11 @@ static void testPlatforms() {
   e.location = "";
   e.subject = "Telefontermin Mobilitätsberatung";
   CHECK(e.platform() == MeetingPlatform::Phone);
+  e.subject = "Mobilitätsberatung mit SIXT";
+  e.location = "Call";
+  CHECK(e.platform() == MeetingPlatform::Phone && !e.isOnSite());
+  e.location = "Callcenter Altona";
+  CHECK(e.platform() == MeetingPlatform::None);
   e.subject = "Workshop";
   e.location = "Hobenköök, Stockmeyerstraße 43, Hamburg";
   CHECK(e.platform() == MeetingPlatform::None && e.isOnSite());

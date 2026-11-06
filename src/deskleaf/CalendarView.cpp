@@ -74,9 +74,32 @@ int drawLines(const GfxRenderer& r, int font, int x, int y, int w, const std::st
   const int fit = std::max(0, (maxY - y) / lh);
   const int lines = std::min(maxLines, fit);
   if (lines <= 0) return y;
-  for (const std::string& line : r.wrappedText(font, text.c_str(), w, lines, style)) {
-    r.drawText(font, x, y, line.c_str(), black, style);
-    y += lh;
+  // Line breaks in notes start a new paragraph; the font has no glyph for them.
+  int left = lines;
+  bool gap = false;
+  bool drewAny = false;
+  size_t start = 0;
+  while (start <= text.size() && left > 0) {
+    size_t end = text.find('\n', start);
+    if (end == std::string::npos) end = text.size();
+    std::string para = text.substr(start, end - start);
+    para.erase(std::remove(para.begin(), para.end(), '\r'), para.end());
+    start = end + 1;
+    if (para.find_first_not_of(" \t") == std::string::npos) {
+      gap = drewAny;  // blank line: half a line of space before the next paragraph
+      continue;
+    }
+    if (gap) {
+      y += lh / 2;
+      gap = false;
+      if (y + lh > maxY) break;
+    }
+    for (const std::string& line : r.wrappedText(font, para.c_str(), w, left, style)) {
+      r.drawText(font, x, y, line.c_str(), black, style);
+      y += lh;
+      --left;
+      drewAny = true;
+    }
   }
   return y;
 }
@@ -139,8 +162,9 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   }
   if (e.isImportant()) r.fillRect(x, y, 4, h, textBlack);
 
-  // Icons: 2x on boxes tall enough, else 1x (the 12 px originals).
-  const int scale = h >= 34 ? 2 : 1;
+  // Icons: 2x from 30-minute boxes up, so they look the same in most boxes;
+  // 1x (the 12 px originals) only in very short ones.
+  const int scale = h >= 26 ? 2 : 1;
   const int iconPx = 12 * scale;
   const int maxY = y + h - 2;
   const int titleH = r.getLineHeight(UI_10_FONT_ID);
