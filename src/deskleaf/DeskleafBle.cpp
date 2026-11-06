@@ -38,6 +38,7 @@ struct Rx {
   bool active = false;
   bool force = false;
   int64_t bridgeEpoch = 0;  // applied on the caller task, not in the NimBLE host task
+  std::string bridgeTz;
   std::string header;       // control lines may be split across notifications
   uint32_t lastChunkMs = 0;
   std::atomic<bool> done{false};
@@ -83,7 +84,8 @@ void processChunk(const uint8_t* data, size_t len) {
         rx.bridgeEpoch = atoll(value.c_str());
         progressed = true;
       } else if (takeLine(rx.header, "TZ:", value)) {
-        progressed = true;  // the device keeps its own timezone setting
+        rx.bridgeTz = value;
+        progressed = true;
       } else if (rx.header.compare(0, 5, "SAME\n") == 0) {
         rx.unchanged = true;
         rx.done = true;
@@ -141,6 +143,7 @@ void resetRx() {
   rx.expected = rx.written = 0;
   rx.active = rx.force = false;
   rx.bridgeEpoch = 0;
+  rx.bridgeTz.clear();
   rx.header.clear();
   rx.done = rx.unchanged = rx.oom = rx.connected = false;
   rx.lastChunkMs = millis();
@@ -243,6 +246,7 @@ SyncResult syncWithBridge(const uint32_t knownPayloadHash, const uint16_t batter
       rx.buffer = nullptr;
     }
     const int64_t epoch = rx.bridgeEpoch;
+    snprintf(result.bridgeTz, sizeof(result.bridgeTz), "%s", rx.bridgeTz.c_str());
     xSemaphoreGive(rx.mutex);
     // settimeofday + NVS write stay off the NimBLE host task's small stack.
     if (epoch > 1700000000LL) {

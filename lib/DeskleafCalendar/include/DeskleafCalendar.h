@@ -45,6 +45,16 @@ struct CalEvent {
   int startMinutes() const;  // minutes after local midnight, -1 if unparsable
   int endMinutes() const;    // falls back to start + 60
   std::string startDate() const { return start.size() >= 10 ? start.substr(0, 10) : std::string(); }
+  // Last day the event covers ("YYYY-MM-DD"): an end at 00:00 on a later day
+  // (all-day DTEND, a timed event ending at midnight) does not reach that day.
+  std::string lastDate() const;
+  bool coversDate(const std::string& isoDate) const;
+  // Shown as a day bar on that date: all-day, or a day a timed multi-day event
+  // covers completely (neither its first nor its last day).
+  bool barOn(const std::string& isoDate) const;
+  // The event's minutes on that date: 0 on a later day, 24*60 before a later end.
+  int startMinutesOn(const std::string& isoDate) const;
+  int endMinutesOn(const std::string& isoDate) const;
 };
 
 // Parses the payload array. Unknown fields are ignored. Returns false on a JSON
@@ -58,8 +68,8 @@ uint32_t semanticPayloadHash(const std::vector<CalEvent>& events);
 // FNV-1a over the raw payload bytes (fallback when the payload does not parse).
 uint32_t fnv1a(const uint8_t* data, size_t len, uint32_t seed = 2166136261u);
 
-// Events whose start falls on `isoDate` ("YYYY-MM-DD"), timed events sorted by
-// start, all-day events first.
+// Events covering `isoDate` ("YYYY-MM-DD"): day bars (all-day events and later
+// days of multi-day events) first, then timed events by start.
 std::vector<const CalEvent*> eventsOnDate(const std::vector<CalEvent>& events, const std::string& isoDate);
 
 // Hash of what one day shows; a sleep-screen redraw is needed only when it changes.

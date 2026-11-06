@@ -54,7 +54,13 @@ void CalendarActivity::syncNow() {
       deskleaf::CALENDAR.sync(incoming, newState, nullptr, [] { return gpio.rawInputActive(); });
   {
     RenderLock lock;
-    if (status == deskleaf::SyncStatus::NewPayload) events.swap(incoming);
+    if (status == deskleaf::SyncStatus::NewPayload) {
+      events.swap(incoming);
+      // Tap targets and the opened event point into the old vector.
+      hits.clear();
+      detailIndex = -1;
+      if (view == View::Detail) view = View::Day;
+    }
     state = newState;
   }
   syncing = false;
@@ -74,6 +80,8 @@ void CalendarActivity::syncNow() {
 
 void CalendarActivity::step(const int direction) {
   switch (view) {
+    case View::Detail:
+      return;
     case View::Day:
       cursor = deskleaf::addDays(cursor, direction);
       break;
@@ -99,6 +107,7 @@ void CalendarActivity::step(const int direction) {
 
 void CalendarActivity::cycleView() {
   view = view == View::Day ? View::Week : view == View::Week ? View::Month : View::Day;
+  detailIndex = -1;
   requestUpdate();
 }
 
@@ -112,6 +121,18 @@ void CalendarActivity::loop() {
   }
 
   using Button = MappedInputManager::Button;
+  if (view == View::Detail) {
+    // Back, Confirm or any tap closes the details and returns to the day.
+    int tx = 0;
+    int ty = 0;
+    if (mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture() ||
+        mappedInput.wasReleased(Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
+      view = View::Day;
+      detailIndex = -1;
+      requestUpdate();
+    }
+    return;
+  }
   if (mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture()) {
     onGoHome();
     return;
@@ -163,7 +184,23 @@ void CalendarActivity::loop() {
     }
     return;
   }
-  if (view == View::Month) {
+  if (view == View::Day) {
+    int picked = -1;
+    {
+      RenderLock lock;  // the render task rebuilds `hits`
+      for (const auto& hit : hits) {
+        if (tx >= hit.x && tx < hit.x + hit.w && ty >= hit.y && ty < hit.y + hit.h) {
+          picked = static_cast<int>(hit.event - events.data());
+          break;
+        }
+      }
+    }
+    if (picked >= 0) {
+      detailIndex = picked;
+      view = View::Detail;
+      requestUpdate();
+    }
+  } else if (view == View::Month) {
     // Same grid geometry as view::drawMonth.
     const int w = renderer.getScreenWidth();
     const int kwW = 34;
@@ -230,6 +267,11 @@ void CalendarActivity::render(RenderLock&&) {
       std::snprintf(title, sizeof(title), "%s", deskleaf::monthNameDe(cursor.month));
       std::snprintf(subtitle, sizeof(subtitle), "%d", cursor.year);
       break;
+    case View::Detail:
+      std::snprintf(title, sizeof(title), "Termin");
+      std::snprintf(subtitle, sizeof(subtitle), "%s, %d. %s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(cursor)),
+                    cursor.day, deskleaf::monthNameDe(cursor.month));
+      break;
   }
 
   headerHeight = view_ns::drawHeader(renderer, title, subtitle, status);
@@ -239,8 +281,10 @@ void CalendarActivity::render(RenderLock&&) {
   if (!clockValid) {
     renderer.drawCenteredText(UI_10_FONT_ID, (headerHeight + bottom) / 2,
                               "Uhrzeit unbekannt – Bridge auf dem Mac starten", true);
-  } else if (view == View::Day) {
-    view_ns::drawDay(renderer, events, cursor, today, status, headerHeight, bottom);
+  } else if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+    view_ns::drawDetail(renderer, events[detailIndex], headerHeight, bottom);
+  } else if (view == View::Day || view == View::Detail) {
+    view_ns::drawDay(renderer, events, cursor, today, status, headerHeight, bottom, &hits);
   } else if (view == View::Week) {
     view_ns::drawWeek(renderer, events, cursor, today, headerHeight, bottom);
   } else {
@@ -248,7 +292,8 @@ void CalendarActivity::render(RenderLock&&) {
   }
 
   const char* nextView = view == View::Day ? "Woche" : view == View::Week ? "Monat" : "Tag";
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), nextView, "<", ">");
+  const auto labels = view == View::Detail ? mappedInput.mapLabels(tr(STR_BACK), "", "", "")
+                                           : mappedInput.mapLabels(tr(STR_BACK), nextView, "<", ">");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }

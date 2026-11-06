@@ -16,12 +16,21 @@ struct Status {
   bool showNowLine = false;          // interactive view only; the sleep screen would go stale
 };
 
+// Tap target of a drawn event (day view), for the detail screen.
+struct HitBox {
+  int x, y, w, h;
+  const CalEvent* event;
+};
+
 // Header band shared by all views. Returns the y below it.
 int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, const Status& status);
 
 // Timeline of one day between `top` and `bottom`.
 void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, const Status& status,
-             int top, int bottom);
+             int top, int bottom, std::vector<HitBox>* hits = nullptr);
+
+// Full details of one event between `top` and `bottom`.
+void drawDetail(const GfxRenderer& r, const CalEvent& event, int top, int bottom);
 
 // Monday-based week containing `day`, one row per day.
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, int top, int bottom);

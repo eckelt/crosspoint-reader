@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace deskleaf {
@@ -105,6 +106,49 @@ int CalEvent::endMinutes() const {
   return e;
 }
 
+namespace {
+bool parseIsoDate(const std::string& iso, Date& out) {
+  if (iso.size() < 10 || iso[4] != '-' || iso[7] != '-') return false;
+  out = {std::atoi(iso.substr(0, 4).c_str()), std::atoi(iso.substr(5, 2).c_str()), std::atoi(iso.substr(8, 2).c_str())};
+  return out.month >= 1 && out.month <= 12 && out.day >= 1 && out.day <= 31;
+}
+}  // namespace
+
+std::string CalEvent::lastDate() const {
+  const std::string first = startDate();
+  if (end.size() < 10) return first;
+  const std::string last = end.substr(0, 10);
+  if (last <= first) return first;
+  const int endMin = parseHhMm(end);
+  if (endMin <= 0) {  // 00:00 or no time: exclusive end
+    Date d{};
+    if (!parseIsoDate(last, d)) return first;
+    const std::string previous = isoString(addDays(d, -1));
+    return previous < first ? first : previous;
+  }
+  return last;
+}
+
+bool CalEvent::barOn(const std::string& isoDate) const {
+  return isAllDay || (startDate() < isoDate && isoDate < lastDate());
+}
+
+int CalEvent::startMinutesOn(const std::string& isoDate) const {
+  return isoDate == startDate() ? startMinutes() : 0;
+}
+
+int CalEvent::endMinutesOn(const std::string& isoDate) const {
+  if (lastDate() == startDate()) return endMinutes();
+  if (isoDate != lastDate()) return 24 * 60;
+  const int e = parseHhMm(end);
+  return e > 0 ? e : 24 * 60;
+}
+
+bool CalEvent::coversDate(const std::string& isoDate) const {
+  const std::string first = startDate();
+  return !first.empty() && first <= isoDate && isoDate <= lastDate();
+}
+
 bool parsePayload(const char* json, size_t len, std::vector<CalEvent>& out) {
   out.clear();
   JsonDocument filter;
@@ -172,11 +216,13 @@ uint32_t semanticPayloadHash(const std::vector<CalEvent>& events) {
 std::vector<const CalEvent*> eventsOnDate(const std::vector<CalEvent>& events, const std::string& isoDate) {
   std::vector<const CalEvent*> out;
   for (const CalEvent& e : events) {
-    if (e.start.compare(0, 10, isoDate) == 0) out.push_back(&e);
+    if (e.coversDate(isoDate)) out.push_back(&e);
   }
-  std::stable_sort(out.begin(), out.end(), [](const CalEvent* a, const CalEvent* b) {
-    if (a->isAllDay != b->isAllDay) return a->isAllDay;
-    return a->startMinutes() < b->startMinutes();
+  std::stable_sort(out.begin(), out.end(), [&isoDate](const CalEvent* a, const CalEvent* b) {
+    const bool barA = a->barOn(isoDate);
+    const bool barB = b->barOn(isoDate);
+    if (barA != barB) return barA;
+    return a->startMinutesOn(isoDate) < b->startMinutesOn(isoDate);
   });
   return out;
 }

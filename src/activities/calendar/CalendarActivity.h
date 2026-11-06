@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "activities/Activity.h"
+#include "deskleaf/CalendarView.h"
 #include "deskleaf/DeskleafCalendarService.h"
 
 class CalendarActivity final : public Activity {
@@ -21,7 +22,7 @@ class CalendarActivity final : public Activity {
   bool preventAutoSleep() override { return syncing; }
 
  private:
-  enum class View : uint8_t { Day, Week, Month };
+  enum class View : uint8_t { Day, Week, Month, Detail };
 
   void step(int direction);
   void cycleView();
@@ -37,4 +38,7 @@ class CalendarActivity final : public Activity {
   bool syncing = false;
   bool syncPending = false;
   int headerHeight = 0;
+  // Day view tap targets (rebuilt on every day render) and the opened event.
+  std::vector<deskleaf::view::HitBox> hits;
+  int detailIndex = -1;  // index into `events`
 };

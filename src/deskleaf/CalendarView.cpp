@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <string>
 
@@ -20,7 +21,7 @@ constexpr int kMargin = 8;
 constexpr int kAxisW = 30;  // hour labels left of the timeline
 constexpr int kColGap = 4;
 constexpr int kMinBoxH = 26;
-// The family calendar was red on the 4-color Deskleaf; here it is inverted.
+// The family calendar was red on the 4-color Deskleaf; here dark gray, white text.
 constexpr const char* kFamilyCalendar = "Ohana";
 
 const char* platformLabel(MeetingPlatform p) {
@@ -87,17 +88,18 @@ void dottedRect(const GfxRenderer& r, int x, int y, int w, int h) {
   }
 }
 
-void drawEventBox(const GfxRenderer& r, const CalEvent& e, int x, int y, int w, int h) {
+void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
   const bool textBlack = !family;
   if (e.isCancelled) {
     r.fillRect(x, y, w, h, false);
     dottedRect(r, x, y, w, h);
   } else if (family) {
-    r.fillRoundedRect(x, y, w, h, 4, Color::Black);
+    r.fillRoundedRect(x, y, w, h, 4, Color::DarkGray);
   } else {
-    r.fillRoundedRect(x, y, w, h, 4, Color::LightGray);
-    r.drawRoundedRect(x, y, w, h, 1, 4, true);
+    // Border only slightly darker than the fill: a dithered dark-gray ring.
+    r.fillRoundedRect(x, y, w, h, 4, Color::DarkGray);
+    r.fillRoundedRect(x + 1, y + 1, w - 2, h - 2, 3, Color::LightGray);
   }
   if (e.isImportant()) r.fillRect(x, y, 4, h, textBlack);
 
@@ -108,7 +110,14 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, int x, int y, int w, 
   const int titleLines = h >= 70 ? 2 : 1;
   cy = drawLines(r, UI_10_FONT_ID, tx, cy, tw, e.subject, titleLines, maxY, textBlack, EpdFontFamily::BOLD);
 
-  std::string meta = hhmm(e.startMinutes()) + "–" + hhmm(e.endMinutes() % (24 * 60));
+  std::string meta;
+  if (e.lastDate() == e.startDate()) {
+    meta = hhmm(e.startMinutes()) + "–" + hhmm(e.endMinutes() % (24 * 60));
+  } else if (dayIso == e.startDate()) {
+    meta = "ab " + hhmm(e.startMinutes());
+  } else {
+    meta = "bis " + hhmm(e.endMinutesOn(dayIso) % (24 * 60));
+  }
   const std::string loc = e.displayLocation();
   if (!loc.empty()) meta += "  " + loc;
   cy = drawLines(r, SMALL_FONT_ID, tx, cy, tw, meta, 1, maxY, textBlack);
@@ -157,12 +166,14 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
 }
 
 void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,
-             const Status& status, const int top, const int bottom) {
+             const Status& status, const int top, const int bottom, std::vector<HitBox>* hits) {
+  if (hits) hits->clear();
   const int w = r.getScreenWidth();
   const auto dayEvents = eventsOnDate(events, isoString(day));
   std::vector<const CalEvent*> allDay;
   std::vector<const CalEvent*> timed;
-  for (const CalEvent* e : dayEvents) (e->isAllDay ? allDay : timed).push_back(e);
+  const std::string dayIso = isoString(day);
+  for (const CalEvent* e : dayEvents) (e->barOn(dayIso) ? allDay : timed).push_back(e);
 
   int y = top + 6;
   const int barH = r.getLineHeight(UI_10_FONT_ID) + 6;
@@ -172,10 +183,11 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
     if (e->isCancelled) {
       dottedRect(r, kMargin, y, w - 2 * kMargin, barH);
     } else {
-      r.fillRoundedRect(kMargin, y, w - 2 * kMargin, barH, 4, family ? Color::Black : Color::LightGray);
+      r.fillRoundedRect(kMargin, y, w - 2 * kMargin, barH, 4, family ? Color::DarkGray : Color::LightGray);
     }
     const std::string t = r.truncatedText(UI_10_FONT_ID, e->subject.c_str(), w - 2 * kMargin - 12);
     r.drawText(UI_10_FONT_ID, kMargin + 6, y + 3, t.c_str(), !family);
+    if (hits) hits->push_back({kMargin, y, w - 2 * kMargin, barH, e});
     y += barH + 3;
   }
 
@@ -190,8 +202,11 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
   int firstHour = 7;
   int lastHour = 17;
   for (const CalEvent* e : timed) {
-    firstHour = std::min(firstHour, e->startMinutes() / 60);
-    lastHour = std::max(lastHour, (e->endMinutes() + 59) / 60);
+    // A segment that comes from or runs into another day does not stretch the axis.
+    const int s0 = e->startMinutesOn(dayIso);
+    const int e0 = e->endMinutesOn(dayIso);
+    if (s0 > 0) firstHour = std::min(firstHour, s0 / 60);
+    if (e0 < 24 * 60) lastHour = std::max(lastHour, (e0 + 59) / 60);
   }
   lastHour = std::min(lastHour, 24);
   const int axisTop = y + 8;
@@ -205,13 +220,14 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
     const int ly = yOf(h * 60);
     char buf[4];
     std::snprintf(buf, sizeof(buf), "%02d", h % 24);
-    r.drawText(SMALL_FONT_ID, kMargin - 4, ly - r.getLineHeight(SMALL_FONT_ID) / 2, buf, true);
+    // Digits span roughly the lower 70% of the ascender: center them on the line.
+    r.drawText(SMALL_FONT_ID, kMargin - 4, ly - r.getFontAscenderSize(SMALL_FONT_ID) * 64 / 100, buf, true);
     for (int x = kMargin + kAxisW - 6; x < w - kMargin; x += 4) r.drawPixel(x, ly);
   }
 
   std::vector<LayoutInput> inputs;
   inputs.reserve(timed.size());
-  for (const CalEvent* e : timed) inputs.push_back({e->startMinutes(), e->endMinutes()});
+  for (const CalEvent* e : timed) inputs.push_back({e->startMinutesOn(dayIso), e->endMinutesOn(dayIso)});
   const int areaX = kMargin + kAxisW;
   const int areaW = w - areaX - kMargin;
   for (const LayoutBox& b : layoutDay(inputs)) {
@@ -220,7 +236,9 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
     const int bw = colW * b.colSpan + kColGap * (b.colSpan - 1);
     const int by = yOf(std::max(b.startMin, firstHour * 60)) + 1;
     const int bh = std::max(kMinBoxH, yOf(std::min(b.endMin, lastHour * 60)) - by - 1);
-    drawEventBox(r, *timed[b.eventIndex], bx, by, bw, std::min(bh, axisBottom - by));
+    const int boxH = std::min(bh, axisBottom - by);
+    drawEventBox(r, *timed[b.eventIndex], dayIso, bx, by, bw, boxH);
+    if (hits) hits->push_back({bx, by, bw, boxH, timed[b.eventIndex]});
   }
 
   if (status.showNowLine && sameDate(day, today)) {
@@ -233,6 +251,62 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
       r.fillRect(kMargin + kAxisW - 10, ny - 1, w - kMargin - (kMargin + kAxisW - 10), 3, true);
       r.fillRoundedRect(kMargin + kAxisW - 14, ny - 5, 10, 10, 5, Color::Black);
     }
+  }
+}
+
+void drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const int bottom) {
+  const int w = r.getScreenWidth();
+  const int x = kMargin + 8;
+  const int tw = w - 2 * x;
+  int y = top + 12;
+  y = drawLines(r, UI_12_FONT_ID, x, y, tw, e.subject, 3, bottom, true, EpdFontFamily::BOLD) + 6;
+
+  std::string when = e.isAllDay ? std::string("ganztägig")
+                                : hhmm(e.startMinutes()) + " – " + hhmm(e.endMinutes() % (24 * 60)) + " Uhr";
+  // Multi-day: name the span; times then refer to the first and last day.
+  if (e.lastDate() != e.startDate()) {
+    Date a{};
+    Date b{};
+    const auto parse = [](const std::string& s, Date& d) {
+      d = {std::atoi(s.substr(0, 4).c_str()), std::atoi(s.substr(5, 2).c_str()), std::atoi(s.substr(8, 2).c_str())};
+    };
+    parse(e.startDate(), a);
+    parse(e.lastDate(), b);
+    char span[64];
+    std::snprintf(span, sizeof(span), "%d.%d. – %d.%d.", a.day, a.month, b.day, b.month);
+    when = span;
+    if (!e.isAllDay && e.end.size() >= 16) {
+      when += "  ·  " + hhmm(e.startMinutes()) + " – " + e.end.substr(11, 5) + " Uhr";
+    }
+  }
+  if (e.isCancelled) when += "  ·  abgesagt";
+  y = drawLines(r, UI_10_FONT_ID, x, y, tw, when, 1, bottom, true, EpdFontFamily::BOLD);
+
+  const auto field = [&](const char* label, const std::string& value) {
+    if (value.empty() || y + 2 * r.getLineHeight(SMALL_FONT_ID) > bottom) return;
+    y += 8;
+    r.drawText(SMALL_FONT_ID, x, y, label, true, EpdFontFamily::BOLD);
+    y += r.getLineHeight(SMALL_FONT_ID);
+    y = drawLines(r, UI_10_FONT_ID, x, y, tw, value, 3, bottom, true);
+  };
+  field("Ort", e.displayLocation());
+  std::string who = e.organizer;
+  if (e.numAttendees > 0) who += (who.empty() ? "" : "  ·  ") + std::to_string(e.numAttendees) + " Teilnehmer";
+  field("Organisation", who);
+  field("Kalender", e.calendar);
+  field("Hinweise", markerLine(e));
+
+  if (!e.notes.empty() && y + 2 * r.getLineHeight(SMALL_FONT_ID) < bottom) {
+    y += 10;
+    r.drawLine(x, y, w - x, y, true);
+    y += 8;
+    std::string notes = e.notes;
+    for (const char* box : {"- [ ] ", "- [x] ", "- [X] "}) {
+      for (size_t p = notes.find(box); p != std::string::npos; p = notes.find(box, p)) {
+        notes.replace(p, 6, box[3] == ' ' ? "[ ] " : "[x] ");
+      }
+    }
+    drawLines(r, UI_10_FONT_ID, x, y, tw, notes, 40, bottom, true);
   }
 }
 
@@ -268,7 +342,10 @@ void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
         r.drawText(SMALL_FONT_ID, labelW + 8, y + 4 + line * lh, more.c_str(), true, EpdFontFamily::BOLD);
         break;
       }
-      std::string text = e.isAllDay ? std::string("ganztags  ") : hhmm(e.startMinutes()) + "  ";
+      const std::string dIso = isoString(d);
+      std::string text = e.barOn(dIso) ? std::string("ganztags  ")
+                         : dIso != e.startDate() ? "bis " + hhmm(e.endMinutesOn(dIso) % (24 * 60)) + "  "
+                                                 : hhmm(e.startMinutes()) + "  ";
       text += e.subject;
       if (e.isCancelled) text += " (abgesagt)";
       const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - labelW - 16);

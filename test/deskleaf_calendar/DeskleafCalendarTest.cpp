@@ -75,6 +75,35 @@ static void testDaySelection() {
   CHECK(dayHash(day, "2026-09-11") == dayHash(eventsOnDate(ev, "2026-09-11"), "2026-09-11"));
 }
 
+static void testMultiDay() {
+  const std::string json =
+      R"([{"start":"2026-11-05T00:00:00","end":"2026-11-07T00:00:00","subject":"Vorwerk","isAllDay":true},)"
+      R"({"start":"2026-11-05T09:00:00+01:00","end":"2026-11-06T17:00:00+01:00","subject":"Messe"},)"
+      R"({"start":"2026-11-05T22:00:00","end":"2026-11-06T00:00:00","subject":"Spaet"},)"
+      R"({"start":"2026-11-06T10:00:00","end":"2026-11-06T11:00:00","subject":"Call"}])";
+  std::vector<CalEvent> ev;
+  CHECK(parsePayload(json.data(), json.size(), ev));
+  CHECK(ev[0].lastDate() == "2026-11-06");  // all-day end is exclusive
+  CHECK(ev[1].lastDate() == "2026-11-06");
+  CHECK(ev[2].lastDate() == "2026-11-05");  // ends at midnight
+  const auto day2 = eventsOnDate(ev, "2026-11-06");
+  CHECK(day2.size() == 3);
+  // All-day stays a bar; the timed two-day event is a 00:00-17:00 segment.
+  CHECK(day2[0]->subject == "Vorwerk" && day2[0]->barOn("2026-11-06"));
+  CHECK(day2[1]->subject == "Messe" && !day2[1]->barOn("2026-11-06"));
+  CHECK(day2[1]->startMinutesOn("2026-11-06") == 0 && day2[1]->endMinutesOn("2026-11-06") == 17 * 60);
+  CHECK(day2[1]->startMinutesOn("2026-11-05") == 9 * 60 && day2[1]->endMinutesOn("2026-11-05") == 24 * 60);
+  CHECK(day2[2]->subject == "Call" && !day2[2]->barOn("2026-11-06"));
+  CHECK(ev[3].endMinutesOn("2026-11-06") == 11 * 60);  // single-day unchanged
+  CHECK(eventsOnDate(ev, "2026-11-05").size() == 3);
+  CHECK(eventsOnDate(ev, "2026-11-07").empty());
+  // A three-day timed event: the middle day is fully covered, so a bar.
+  const std::string three = R"([{"start":"2026-11-05T09:00:00","end":"2026-11-07T17:00:00","subject":"Klausur"}])";
+  std::vector<CalEvent> ev3;
+  CHECK(parsePayload(three.data(), three.size(), ev3));
+  CHECK(!ev3[0].barOn("2026-11-05") && ev3[0].barOn("2026-11-06") && !ev3[0].barOn("2026-11-07"));
+}
+
 static void testLocation() {
   CalEvent e;
   e.location = "; DE-HB-Raum 4";
@@ -141,6 +170,7 @@ static void testWake() {
 int main() {
   testHashContract();
   testDaySelection();
+  testMultiDay();
   testLocation();
   testLayout();
   testDates();

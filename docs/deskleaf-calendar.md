@@ -15,7 +15,11 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   timer wake cancels it and boots normally.
 - **Home → Calendar**: day, week and month views. Left/Right or swipes page,
   Confirm or a header tap switches the view, a long press on Confirm (or a
-  long touch) syncs, a tap on a day in week/month opens it. Data older than
+  long touch) syncs, a tap on a day in week/month opens it. A tap on an event
+  in the day view shows its details; Back, Confirm or a tap returns.
+- Multi-day events show on every day they cover. Timed ones keep their times
+  on the first day ("ab 09:00") and the last day ("bis 17:00"); fully covered
+  days in between and all-day events show as day bars. Data older than
   10 minutes is synced on entry. Not shown on cover-grid home themes.
 
 ## Bridge protocol
@@ -23,8 +27,9 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
 Unchanged `calendar.payload.v1` over BLE: the device sends
 `REQ:<semantic hash>:<battery mV>`, the bridge answers `TIME`, `TZ` and either
 `SAME` or `LEN[F]:<n>` plus the JSON. The semantic hash matches the bridge's
-`einkalSemanticHash` (contract vectors in `test/deskleaf_calendar`). The
-device keeps its own timezone setting; set it to Europe/Berlin. The Deskleaf
+`einkalSemanticHash` (contract vectors in `test/deskleaf_calendar`). While no
+timezone was ever chosen in Settings (the clock keeps UTC), the first sync
+adopts the bridge's `TZ` and saves it; a zone picked by the user always wins. The Deskleaf
 firmware OTA and battery-history messages are not used.
 
 Files: payload and state in `/.crosspoint/deskleaf/` on the SD card.

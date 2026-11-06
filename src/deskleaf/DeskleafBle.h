@@ -27,6 +27,7 @@ using AbortCheck = bool (*)();
 struct SyncResult {
   SyncStatus status = SyncStatus::BridgeNotFound;
   bool forceRedraw = false;  // LENF header
+  char bridgeTz[64] = "";    // POSIX TZ the bridge sent, empty if none
   char* payload = nullptr;   // NUL-terminated JSON, owned; release with freePayload()
   size_t payloadLen = 0;
 };

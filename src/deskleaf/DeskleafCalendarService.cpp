@@ -11,9 +11,12 @@
 #include <esp_heap_caps.h>
 #include <esp_sleep.h>
 
+#include <cstring>
 #include <memory>
 
 #include "CalendarView.h"
+#include "CrossPointSettings.h"
+#include "util/Timezones.h"
 #include "fontIds.h"
 
 namespace deskleaf {
@@ -67,6 +70,25 @@ bool writePayload(const char* data, size_t len) {
     return false;
   }
   return Storage.replaceFile(kPayloadTmp, kPayloadPath);
+}
+
+// The device clock keeps UTC until a zone is picked in Settings. While none
+// was ever chosen, the bridge's zone (the Mac's) is adopted once and saved, so
+// "today" and the sync time match the calendar the bridge sends.
+void adoptBridgeTimezone(const char* posixTz) {
+  if (!posixTz || !*posixTz) return;
+  if (SETTINGS.clockTimezone != 255 || SETTINGS.clockUtcOffsetQ != 48) return;  // user's choice wins
+  const TimezoneInfo* table = timezones::table();
+  for (size_t i = 0; i < timezones::count(); ++i) {
+    if (strcmp(table[i].posixTz, posixTz) == 0) {
+      SETTINGS.clockTimezone = static_cast<uint8_t>(i);
+      SETTINGS.saveToFile();
+      timezones::applyToClock();
+      LOG_INF("DSK", "Timezone set from bridge: %s", table[i].name);
+      return;
+    }
+  }
+  LOG_INF("DSK", "Bridge timezone %s not in the zone table", posixTz);
 }
 
 uint16_t batteryMillivolts() {
@@ -130,6 +152,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
 SyncStatus CalendarService::sync(std::vector<CalEvent>& events, CalendarState& state, bool* forceRedraw,
                                  AbortCheck shouldAbort) const {
   SyncResult r = syncWithBridge(state.payloadHash, batteryMillivolts(), shouldAbort);
+  adoptBridgeTimezone(r.bridgeTz);
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
     std::vector<CalEvent> fresh;
