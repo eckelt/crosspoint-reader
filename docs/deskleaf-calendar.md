@@ -19,6 +19,9 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   in the day view shows its details; Back, Confirm or a tap returns.
 - Weekends show Saturday and Sunday side by side on a shared hour axis, on
   the sleep screen and in the day view (paging goes Friday, weekend, Monday).
+- Event boxes: place icon (Teams, Meet, NE, LinkedIn or an on-site pin) and
+  title, then time · organizer +attendees, then location; series, attachment
+  and Obsidian-note icons (copied from deskleaf-display `include/Icons.h`).
 - A free day (and a completely free weekend) shows the Deskleaf free-day
   motif (`src/deskleaf/FreeDayArtData.cpp`, copied from deskleaf-display).
 - Multi-day events show on every day they cover. Timed ones keep their times

@@ -11,6 +11,7 @@
 #include <ctime>
 #include <string>
 
+#include "EventIcons.h"
 #include "FreeDayArt.h"
 #include "fontIds.h"
 
@@ -89,6 +90,38 @@ void dottedRect(const GfxRenderer& r, int x, int y, int w, int h) {
   }
 }
 
+// 1-bit icon (rows MSB first, padded to bytes), scaled by an integer factor.
+void drawIcon(const GfxRenderer& r, const unsigned char* bitmap, int w, int h, int x, int y, int scale, bool black) {
+  const int rowBytes = (w + 7) / 8;
+  for (int j = 0; j < h; ++j) {
+    for (int i = 0; i < w; ++i) {
+      if (!(bitmap[j * rowBytes + i / 8] & (0x80 >> (i % 8)))) continue;
+      for (int dy = 0; dy < scale; ++dy) {
+        for (int dx = 0; dx < scale; ++dx) r.drawPixel(x + i * scale + dx, y + j * scale + dy, black);
+      }
+    }
+  }
+}
+
+// Where the event happens: a call service, or a pin for a physical place.
+const unsigned char* placeIcon(const CalEvent& e) {
+  switch (e.platform()) {
+    case MeetingPlatform::Teams:
+      return icons::kTeams;
+    case MeetingPlatform::Meet:
+      return icons::kMeet;
+    case MeetingPlatform::Ne:
+      return icons::kNE;
+    case MeetingPlatform::LinkedIn:
+      return icons::kLinkedIn;
+    case MeetingPlatform::None:
+      break;
+  }
+  const std::string loc = e.displayLocation();
+  if (loc.empty() || loc.find("://") != std::string::npos) return nullptr;
+  return icons::kOnSite;
+}
+
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
   const bool textBlack = !family;
@@ -104,13 +137,43 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   }
   if (e.isImportant()) r.fillRect(x, y, 4, h, textBlack);
 
-  const int tx = x + 6;
-  const int tw = w - 10;
+  // Icons: 2x on boxes tall enough, else 1x (the 12 px originals).
+  const int scale = h >= 34 ? 2 : 1;
+  const int iconPx = 12 * scale;
   const int maxY = y + h - 2;
-  int cy = y + 3;
-  const int titleLines = h >= 70 ? 2 : 1;
-  cy = drawLines(r, UI_10_FONT_ID, tx, cy, tw, e.subject, titleLines, maxY, textBlack, EpdFontFamily::BOLD);
+  int right = x + w - 4;  // top-right icon row, filled right to left
+  if (e.isRecurring) {
+    right -= iconPx;
+    drawIcon(r, e.isMoved ? icons::kSeriesMoved : icons::kSeries, e.isMoved ? 13 : 12, 12, right, y + 3, scale,
+             textBlack);
+    right -= 3;
+  }
+  if (e.hasAttachments) {
+    right -= iconPx;
+    drawIcon(r, icons::kAttachment, 12, 12, right, y + 3, scale, textBlack);
+    right -= 3;
+  }
+  const bool hasNote = e.hasObsidianNote || e.location.find("obsidian://") != std::string::npos;
+  if (hasNote && h >= iconPx + 8 + r.getLineHeight(UI_10_FONT_ID)) {
+    drawIcon(r, icons::kObsidian, 12, 12, x + w - 4 - iconPx, y + h - 3 - iconPx, scale, textBlack);
+  }
 
+  // Title row: place icon, then the title up to the top-right icons.
+  int tx = x + 6;
+  const unsigned char* place = placeIcon(e);
+  if (place) {
+    const int lh = r.getLineHeight(UI_10_FONT_ID);
+    drawIcon(r, place, 12, 12, tx, y + 3 + std::max(0, (lh - iconPx) / 2), scale, textBlack);
+    tx += iconPx + 4;
+  }
+  const int titleW = right - tx - 2;
+  int cy = y + 3;
+  const int titleLines = h >= 90 ? 2 : 1;
+  cy = drawLines(r, UI_10_FONT_ID, tx, cy, titleW, e.subject, titleLines, maxY, textBlack, EpdFontFamily::BOLD);
+
+  const int bx = x + 6;
+  const int bw = w - 10;
+  // Time, then who: the organizer and how many others are invited.
   std::string meta;
   if (e.lastDate() == e.startDate()) {
     meta = hhmm(e.startMinutes()) + "–" + hhmm(e.endMinutes() % (24 * 60));
@@ -119,23 +182,26 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   } else {
     meta = "bis " + hhmm(e.endMinutesOn(dayIso) % (24 * 60));
   }
-  const std::string loc = e.displayLocation();
-  if (!loc.empty()) meta += "  " + loc;
-  cy = drawLines(r, SMALL_FONT_ID, tx, cy, tw, meta, 1, maxY, textBlack);
-
+  if (e.isCancelled) meta += "  abgesagt";
   std::string who = e.organizer;
-  if (e.numAttendees > 0) who += (who.empty() ? "" : " ") + std::string("(+") + std::to_string(e.numAttendees) + ")";
-  cy = drawLines(r, SMALL_FONT_ID, tx, cy, tw, who, 1, maxY, textBlack);
-  cy = drawLines(r, SMALL_FONT_ID, tx, cy, tw, markerLine(e), 1, maxY, textBlack);
+  if (e.numAttendees > 0) who += (who.empty() ? "+" : " +") + std::to_string(e.numAttendees);
+  if (!who.empty()) meta += "  ·  " + who;
+  cy = drawLines(r, SMALL_FONT_ID, bx, cy, bw, meta, 1, maxY, textBlack);
+
+  const std::string loc = e.displayLocation();
+  if (!loc.empty() && loc.find("://") == std::string::npos) {
+    cy = drawLines(r, SMALL_FONT_ID, bx, cy, bw, loc, 1, maxY, textBlack);
+  }
+
   // Notes from the Obsidian brain: markdown checkboxes become ASCII markers.
   if (!e.notes.empty() && cy + r.getLineHeight(SMALL_FONT_ID) <= maxY) {
     std::string notes = e.notes;
     for (const char* box : {"- [ ] ", "- [x] ", "- [X] "}) {
-      for (size_t p = notes.find(box); p != std::string::npos; p = notes.find(box, p)) {
-        notes.replace(p, 6, box[3] == ' ' ? "[ ] " : "[x] ");
+      for (size_t pos = notes.find(box); pos != std::string::npos; pos = notes.find(box, pos)) {
+        notes.replace(pos, 6, box[3] == ' ' ? "[ ] " : "[x] ");
       }
     }
-    drawLines(r, SMALL_FONT_ID, tx, cy + 2, tw, notes, 6, maxY, textBlack);
+    drawLines(r, SMALL_FONT_ID, bx, cy + 2, bw - (hasNote ? iconPx + 4 : 0), notes, 6, maxY, textBlack);
   }
 }
 

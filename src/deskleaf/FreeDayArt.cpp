@@ -29,7 +29,7 @@ void decode(const unsigned char* rle, size_t len, uint8_t* out) {
   if (pos < kLayerBytes) std::memset(out + pos, 0, kLayerBytes - pos);
 }
 
-bool bit(const uint8_t* layer, int sx, int sy) {
+bool layerBit(const uint8_t* layer, int sx, int sy) {
   return layer[sy * kBytesPerRow + sx / 8] & (0x80 >> (sx % 8));
 }
 
@@ -65,9 +65,9 @@ int drawFreeDay(const GfxRenderer& r, const int x, const int y, const int maxW, 
       const int py = y + dy;
       // Black over red over yellow, as on the 4-color panel. Red becomes a
       // dark gray (3 of 4 dots), yellow a light gray (1 of 4 dots).
-      bool ink = bit(black, sx, sy);
-      if (!ink && bit(red, sx, sy)) ink = !((px & 1) && (py & 1));
-      else if (!ink && bit(yellow, sx, sy)) ink = !(px & 1) && !(py & 1);
+      bool ink = layerBit(black, sx, sy);
+      if (!ink && layerBit(red, sx, sy)) ink = !((px & 1) && (py & 1));
+      else if (!ink && layerBit(yellow, sx, sy)) ink = !(px & 1) && !(py & 1);
       if (ink) r.drawPixel(px, py, true);
     }
   }
