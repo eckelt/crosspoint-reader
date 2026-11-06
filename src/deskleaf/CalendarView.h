@@ -37,6 +37,9 @@ void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, Date
 
 bool isWeekend(Date d);
 
+// Free-day motif plus caption, filling [top, bottom).
+void drawFreeDay(const GfxRenderer& r, const char* caption, int top, int bottom);
+
 // Header texts for a day ("Freitag" / "6. November 2026 · KW 45"), or for the
 // weekend it belongs to ("Wochenende" / "7.–8. November · KW 45").
 void dayTitle(Date day, char* title, size_t titleSize, char* subtitle, size_t subtitleSize, bool withYear);

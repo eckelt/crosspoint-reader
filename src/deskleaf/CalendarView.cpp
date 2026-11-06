@@ -11,6 +11,7 @@
 #include <ctime>
 #include <string>
 
+#include "FreeDayArt.h"
 #include "fontIds.h"
 
 namespace deskleaf::view {
@@ -264,6 +265,14 @@ void drawNowLine(const GfxRenderer& r, const Axis& a, int x0, int x1) {
 
 bool isWeekend(const Date d) { return weekdayMon0(d) >= 5; }
 
+// The Deskleaf free-day motif with a caption below it.
+void drawFreeDay(const GfxRenderer& r, const char* caption, const int top, const int bottom) {
+  const int captionH = r.getLineHeight(UI_12_FONT_ID) + 10;
+  const int artH = art::drawFreeDay(r, 0, top + 4, r.getScreenWidth(), bottom - top - 4 - captionH);
+  const int textY = artH > 0 ? top + 4 + artH + 6 : (top + bottom) / 2 - captionH / 2;
+  r.drawCenteredText(UI_12_FONT_ID, textY, caption, true, EpdFontFamily::BOLD);
+}
+
 void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,
              const Status& status, const int top, const int bottom, std::vector<HitBox>* hits) {
   if (hits) hits->clear();
@@ -273,9 +282,9 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
   const int y = drawBars(r, d, kMargin, w - 2 * kMargin, top + 6, bottom, hits);
 
   if (d.timed.empty()) {
-    const char* msg = d.bars.empty() ? (sameDate(day, today) ? "Heute bin ich frei!" : "Keine Termine") : "";
-    r.drawCenteredText(UI_12_FONT_ID, (y + bottom) / 2 - r.getLineHeight(UI_12_FONT_ID) / 2, msg, true,
-                       EpdFontFamily::BOLD);
+    if (d.bars.empty()) {
+      drawFreeDay(r, sameDate(day, today) ? "Heute bin ich frei!" : "Frei!", y, bottom);
+    }
     return;
   }
 
@@ -315,6 +324,11 @@ void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, cons
   int axisTop = barsTop;
   for (int i = 0; i < 2; ++i) {
     axisTop = std::max(axisTop, drawBars(r, split[i], colX[i], colW, barsTop, bottom, hits));
+  }
+
+  if (split[0].bars.empty() && split[0].timed.empty() && split[1].bars.empty() && split[1].timed.empty()) {
+    drawFreeDay(r, "Freies Wochenende!", axisTop, bottom);
+    return;
   }
 
   Axis a{axisTop + 8, bottom - 6, 7, 17};

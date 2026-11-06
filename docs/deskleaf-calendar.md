@@ -19,6 +19,8 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   in the day view shows its details; Back, Confirm or a tap returns.
 - Weekends show Saturday and Sunday side by side on a shared hour axis, on
   the sleep screen and in the day view (paging goes Friday, weekend, Monday).
+- A free day (and a completely free weekend) shows the Deskleaf free-day
+  motif (`src/deskleaf/FreeDayArtData.cpp`, copied from deskleaf-display).
 - Multi-day events show on every day they cover. Timed ones keep their times
   on the first day ("ab 09:00") and the last day ("bis 17:00"); fully covered
   days in between and all-day events show as day bars. Data older than
