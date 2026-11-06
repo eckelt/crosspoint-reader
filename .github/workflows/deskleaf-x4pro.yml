@@ -2,6 +2,8 @@ name: Deskleaf X4 Pro firmware
 
 # Fork-only: builds the X4 Pro firmware with the Deskleaf calendar and keeps
 # firmware.bin as a run artifact (flash via crosspointreader.com -> Custom .bin).
+# Pushes to deskleaf-calendar also publish a GitHub release; the device's
+# Wi-Fi update (OtaUpdater) reads this fork's latest release.
 on:
   push:
     branches: ['deskleaf-*']
@@ -23,6 +25,8 @@ jobs:
   firmware:
     runs-on: ubuntu-latest
     needs: host-tests
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -59,6 +63,19 @@ jobs:
           pio pkg install -e x4pro
           uv pip install --python ~/.platformio/penv/bin/python "pioarduino==6.1.19"
 
+      - name: Set release version
+        id: version
+        # <upstream major.minor>.<run number>: grows with every build, so the
+        # device's semantic version check sees each release as newer.
+        run: |
+          set -euo pipefail
+          base=$(sed -n 's/^version = \([0-9]*\.[0-9]*\)\.[0-9]*$/\1/p' platformio.ini | head -1)
+          test -n "$base"
+          version="$base.${{ github.run_number }}"
+          sed -i "s/^version = [0-9.]*$/version = $version/" platformio.ini
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Build x4pro firmware
         run: |
           set -euo pipefail
@@ -71,3 +88,15 @@ jobs:
           name: firmware-x4pro-deskleaf
           path: .pio/build/x4pro/firmware.bin
           if-no-files-found: error
+
+      - name: Publish release for Wi-Fi update
+        if: github.ref == 'refs/heads/deskleaf-calendar'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          asset="crosspoint-$VERSION-x4pro.bin"
+          cp .pio/build/x4pro/firmware.bin "$asset"
+          gh release create "$VERSION" "$asset" --target "$GITHUB_SHA" --latest \
+            --title "Deskleaf $VERSION" --notes "X4 Pro firmware with the Deskleaf calendar ($GITHUB_SHA)."

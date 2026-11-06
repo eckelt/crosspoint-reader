@@ -19,7 +19,12 @@
 #include "FirmwareFlasher.h"
 
 namespace {
+#if DESKLEAF_CALENDAR
+// The Deskleaf fork updates from its own releases (published by its CI).
+constexpr char latestReleaseUrl[] = "https://api.github.com/repos/eckelt/crosspoint-reader/releases/latest";
+#else
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+#endif
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {

@@ -41,6 +41,15 @@ firmware OTA and battery-history messages are not used.
 
 Files: payload and state in `/.crosspoint/deskleaf/` on the SD card.
 
+## Updates
+
+The fork's CI (`.github/workflows/deskleaf-x4pro.yml`) publishes a GitHub
+release for every push to `deskleaf-calendar`: tag `2.0.<run number>`, asset
+`crosspoint-<tag>-x4pro.bin`. Builds with `DESKLEAF_CALENDAR` check this fork's
+latest release in Settings → firmware update over Wi-Fi, not the upstream
+releases. Install the first build with OTA support over USB or from the SD
+card; older Deskleaf builds still ask upstream.
+
 ## Verify
 
 - Host tests: `ARDUINOJSON_SRC=<ArduinoJson>/src ./test/deskleaf_calendar/run.sh`
