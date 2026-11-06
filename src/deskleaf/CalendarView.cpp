@@ -143,33 +143,50 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   const int scale = h >= 34 ? 2 : 1;
   const int iconPx = 12 * scale;
   const int maxY = y + h - 2;
-  int right = x + w - 4;  // top-right icon row, filled right to left
-  if (e.isRecurring) {
-    right -= iconPx;
-    drawIcon(r, e.isMoved ? icons::kSeriesMoved : icons::kSeries, e.isMoved ? 13 : 12, 12, right, y + 3, scale,
-             textBlack);
+  const int titleH = r.getLineHeight(UI_10_FONT_ID);
+  const int iconY = y + 3 + std::max(0, (titleH - iconPx) / 2);
+
+  // Right side, filled right to left: where it happens, then series, attachment.
+  int right = x + w - 4;
+  const auto pushIcon = [&](const unsigned char* bitmap, int bw) {
+    right -= bw * scale;
+    drawIcon(r, bitmap, bw, 12, right, iconY, scale, textBlack);
     right -= 3;
-  }
-  if (e.hasAttachments) {
-    right -= iconPx;
-    drawIcon(r, icons::kAttachment, 12, 12, right, y + 3, scale, textBlack);
-    right -= 3;
-  }
+  };
+  if (const unsigned char* place = placeIcon(e)) pushIcon(place, 12);
+  if (e.isRecurring) pushIcon(e.isMoved ? icons::kSeriesMoved : icons::kSeries, e.isMoved ? 13 : 12);
+  if (e.hasAttachments) pushIcon(icons::kAttachment, 12);
   const bool hasNote = e.hasObsidianNote || e.location.find("obsidian://") != std::string::npos;
-  if (hasNote && h >= iconPx + 8 + r.getLineHeight(UI_10_FONT_ID)) {
+  if (hasNote && h >= iconPx + 8 + titleH) {
     drawIcon(r, icons::kObsidian, 12, 12, x + w - 4 - iconPx, y + h - 3 - iconPx, scale, textBlack);
   }
 
-  // Title row: place icon, then the title up to the top-right icons.
-  int tx = x + 6;
-  const unsigned char* place = placeIcon(e);
-  if (place) {
-    const int lh = r.getLineHeight(UI_10_FONT_ID);
-    drawIcon(r, place, 12, 12, tx, y + 3 + std::max(0, (lh - iconPx) / 2), scale, textBlack);
-    tx += iconPx + 4;
-  }
+  const int tx = x + 6;
   const int titleW = right - tx - 2;
+  const int smallH = r.getLineHeight(SMALL_FONT_ID);
+  const bool oneLine = h - 6 < titleH + smallH;
+  std::string who = e.organizerName();
+  if (e.numAttendees > 0) who += (who.empty() ? "+" : " +") + std::to_string(e.numAttendees);
+
   int cy = y + 3;
+  if (oneLine) {
+    // No room for a second line: the organizer follows the title, smaller.
+    std::string org = who;
+    int orgW = org.empty() ? 0 : r.getTextWidth(SMALL_FONT_ID, org.c_str());
+    if (orgW > titleW * 2 / 5) {
+      org = r.truncatedText(SMALL_FONT_ID, org.c_str(), titleW * 2 / 5);
+      orgW = r.getTextWidth(SMALL_FONT_ID, org.c_str());
+    }
+    const int gap = org.empty() ? 0 : 8;
+    const std::string title =
+        r.truncatedText(UI_10_FONT_ID, e.subject.c_str(), titleW - orgW - gap, EpdFontFamily::BOLD);
+    r.drawText(UI_10_FONT_ID, tx, cy, title.c_str(), textBlack, EpdFontFamily::BOLD);
+    if (!org.empty()) {
+      const int titleEnd = tx + r.getTextWidth(UI_10_FONT_ID, title.c_str(), EpdFontFamily::BOLD);
+      r.drawText(SMALL_FONT_ID, titleEnd + gap, cy + (titleH - smallH) / 2 + 1, org.c_str(), textBlack);
+    }
+    return;
+  }
   const int titleLines = h >= 90 ? 2 : 1;
   cy = drawLines(r, UI_10_FONT_ID, tx, cy, titleW, e.subject, titleLines, maxY, textBlack, EpdFontFamily::BOLD);
 
@@ -185,8 +202,6 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
     meta = "bis " + hhmm(e.endMinutesOn(dayIso) % (24 * 60));
   }
   if (e.isCancelled) meta += "  abgesagt";
-  std::string who = e.organizer;
-  if (e.numAttendees > 0) who += (who.empty() ? "+" : " +") + std::to_string(e.numAttendees);
   if (!who.empty()) meta += "  ·  " + who;
   cy = drawLines(r, SMALL_FONT_ID, bx, cy, bw, meta, 1, maxY, textBlack);
 
@@ -454,7 +469,7 @@ void drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const in
     y = drawLines(r, UI_10_FONT_ID, x, y, tw, value, 3, bottom, true);
   };
   field("Ort", e.displayLocation());
-  std::string who = e.organizer;
+  std::string who = e.organizerName();
   if (e.numAttendees > 0) who += (who.empty() ? "" : "  ·  ") + std::to_string(e.numAttendees) + " Teilnehmer";
   field("Organisation", who);
   field("Kalender", e.calendar);

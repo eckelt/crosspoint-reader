@@ -134,6 +134,20 @@ bool CalEvent::isOnSite() const {
   return !hasAny(loc, {"online", "zoom", "webex", "whereby", "jitsi", "facetime", "skype", "teams", "meet"});
 }
 
+std::string CalEvent::organizerName() const {
+  std::string name = normalizeHashText(organizer);
+  if (name.size() >= 2 && name.front() == '"' && name.back() == '"') name = name.substr(1, name.size() - 2);
+  const size_t comma = name.find(',');
+  if (name.find('@') != std::string::npos || comma == std::string::npos ||
+      name.find(',', comma + 1) != std::string::npos) {
+    return name;
+  }
+  const std::string last = normalizeHashText(name.substr(0, comma));
+  const std::string first = normalizeHashText(name.substr(comma + 1));
+  if (last.empty() || first.empty()) return name;
+  return first + " " + last;
+}
+
 std::string CalEvent::displayLocation() const {
   std::string l = location;
   if (l.rfind("; ", 0) == 0) l.erase(0, 2);

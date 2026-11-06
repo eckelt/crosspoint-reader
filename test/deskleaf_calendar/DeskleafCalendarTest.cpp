@@ -125,6 +125,20 @@ static void testPlatforms() {
   CHECK(e.platform() == MeetingPlatform::Teams);
 }
 
+static void testOrganizer() {
+  CalEvent e;
+  e.organizer = "Koschmieder, Thomas";
+  CHECK(e.organizerName() == "Thomas Koschmieder");
+  e.organizer = "\"Koschmieder, Thomas\"";
+  CHECK(e.organizerName() == "Thomas Koschmieder");
+  e.organizer = "Alexander Rommel";
+  CHECK(e.organizerName() == "Alexander Rommel");
+  e.organizer = "chefin@example.com";
+  CHECK(e.organizerName() == "chefin@example.com");
+  e.organizer = "A, B, C";
+  CHECK(e.organizerName() == "A, B, C");
+}
+
 static void testLocation() {
   CalEvent e;
   e.location = "; DE-HB-Raum 4";
@@ -193,6 +207,7 @@ int main() {
   testDaySelection();
   testMultiDay();
   testPlatforms();
+  testOrganizer();
   testLocation();
   testLayout();
   testDates();

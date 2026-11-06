@@ -44,6 +44,9 @@ struct CalEvent {
   // A physical place: a location that is no link, call service or phone number.
   bool isOnSite() const;
   bool isImportant() const { return importance == "high"; }
+  // Organizer for display: "Koschmieder, Thomas" -> "Thomas Koschmieder";
+  // addresses and names without exactly one comma stay as they are.
+  std::string organizerName() const;
   // Location without the bridge's room prefixes ("DE-", "; " ...).
   std::string displayLocation() const;
   int startMinutes() const;  // minutes after local midnight, -1 if unparsable
