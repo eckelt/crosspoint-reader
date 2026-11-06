@@ -165,92 +165,174 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
   return h;
 }
 
-void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,
-             const Status& status, const int top, const int bottom, std::vector<HitBox>* hits) {
-  if (hits) hits->clear();
-  const int w = r.getScreenWidth();
-  const auto dayEvents = eventsOnDate(events, isoString(day));
-  std::vector<const CalEvent*> allDay;
-  std::vector<const CalEvent*> timed;
-  const std::string dayIso = isoString(day);
-  for (const CalEvent* e : dayEvents) (e->barOn(dayIso) ? allDay : timed).push_back(e);
+namespace {
 
-  int y = top + 6;
-  const int barH = r.getLineHeight(UI_10_FONT_ID) + 6;
-  for (const CalEvent* e : allDay) {
+struct DaySplit {
+  std::string iso;
+  std::vector<const CalEvent*> bars;
+  std::vector<const CalEvent*> timed;
+};
+
+DaySplit splitDay(const std::vector<CalEvent>& events, const Date day) {
+  DaySplit d;
+  d.iso = isoString(day);
+  for (const CalEvent* e : eventsOnDate(events, d.iso)) (e->barOn(d.iso) ? d.bars : d.timed).push_back(e);
+  return d;
+}
+
+int barHeight(const GfxRenderer& r) { return r.getLineHeight(UI_10_FONT_ID) + 6; }
+
+// Visible hours: 07-17 by default, widened to cover the day's timed events. A
+// segment coming from or running into another day does not stretch the axis.
+void widenHours(const DaySplit& d, int& firstHour, int& lastHour) {
+  for (const CalEvent* e : d.timed) {
+    const int s0 = e->startMinutesOn(d.iso);
+    const int e0 = e->endMinutesOn(d.iso);
+    if (s0 > 0) firstHour = std::min(firstHour, s0 / 60);
+    if (e0 < 24 * 60) lastHour = std::max(lastHour, (e0 + 59) / 60);
+  }
+  lastHour = std::min(lastHour, 24);
+}
+
+// Day bars from y down; returns the y below them.
+int drawBars(const GfxRenderer& r, const DaySplit& d, int x, int w, int y, int bottom, std::vector<HitBox>* hits) {
+  const int barH = barHeight(r);
+  for (const CalEvent* e : d.bars) {
     if (y + barH > bottom) break;
     const bool family = e->calendar == kFamilyCalendar && !e->isCancelled;
     if (e->isCancelled) {
-      dottedRect(r, kMargin, y, w - 2 * kMargin, barH);
+      dottedRect(r, x, y, w, barH);
     } else {
-      r.fillRoundedRect(kMargin, y, w - 2 * kMargin, barH, 4, family ? Color::DarkGray : Color::LightGray);
+      r.fillRoundedRect(x, y, w, barH, 4, family ? Color::DarkGray : Color::LightGray);
     }
-    const std::string t = r.truncatedText(UI_10_FONT_ID, e->subject.c_str(), w - 2 * kMargin - 12);
-    r.drawText(UI_10_FONT_ID, kMargin + 6, y + 3, t.c_str(), !family);
-    if (hits) hits->push_back({kMargin, y, w - 2 * kMargin, barH, e});
+    const std::string t = r.truncatedText(UI_10_FONT_ID, e->subject.c_str(), w - 12);
+    r.drawText(UI_10_FONT_ID, x + 6, y + 3, t.c_str(), !family);
+    if (hits) hits->push_back({x, y, w, barH, e});
     y += barH + 3;
   }
+  return y;
+}
 
-  if (timed.empty()) {
-    const char* msg = allDay.empty() ? (sameDate(day, today) ? "Heute bin ich frei!" : "Keine Termine") : "";
+struct Axis {
+  int top, bottom, firstHour, lastHour;
+  int yOf(int minutes) const {
+    const float pxPerMin = static_cast<float>(bottom - top) / ((lastHour - firstHour) * 60);
+    return top + static_cast<int>((minutes - firstHour * 60) * pxPerMin);
+  }
+};
+
+void drawAxis(const GfxRenderer& r, const Axis& a, int lineX0, int lineX1) {
+  for (int h = a.firstHour; h <= a.lastHour; ++h) {
+    const int ly = a.yOf(h * 60);
+    char buf[4];
+    std::snprintf(buf, sizeof(buf), "%02d", h % 24);
+    // Digits span roughly the lower 70% of the ascender: center them on the line.
+    r.drawText(SMALL_FONT_ID, kMargin - 4, ly - r.getFontAscenderSize(SMALL_FONT_ID) * 64 / 100, buf, true);
+    for (int x = lineX0; x < lineX1; x += 4) r.drawPixel(x, ly);
+  }
+}
+
+void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX, int areaW,
+               std::vector<HitBox>* hits) {
+  std::vector<LayoutInput> inputs;
+  inputs.reserve(d.timed.size());
+  for (const CalEvent* e : d.timed) inputs.push_back({e->startMinutesOn(d.iso), e->endMinutesOn(d.iso)});
+  for (const LayoutBox& b : layoutDay(inputs)) {
+    const int colW = (areaW - kColGap * (b.groupColumns - 1)) / b.groupColumns;
+    const int bx = areaX + b.column * (colW + kColGap);
+    const int bw = colW * b.colSpan + kColGap * (b.colSpan - 1);
+    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
+    const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
+    const int boxH = std::min(bh, a.bottom - by);
+    drawEventBox(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
+    if (hits) hits->push_back({bx, by, bw, boxH, d.timed[b.eventIndex]});
+  }
+}
+
+void drawNowLine(const GfxRenderer& r, const Axis& a, int x0, int x1) {
+  const time_t now = time(nullptr);
+  struct tm lt {};
+  localtime_r(&now, &lt);
+  const int m = lt.tm_hour * 60 + lt.tm_min;
+  if (m < a.firstHour * 60 || m > a.lastHour * 60) return;
+  const int ny = a.yOf(m);
+  r.fillRect(x0, ny - 1, x1 - x0, 3, true);
+  r.fillRoundedRect(x0 - 4, ny - 5, 10, 10, 5, Color::Black);
+}
+
+}  // namespace
+
+bool isWeekend(const Date d) { return weekdayMon0(d) >= 5; }
+
+void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,
+             const Status& status, const int top, const int bottom, std::vector<HitBox>* hits) {
+  if (hits) hits->clear();
+  if (isWeekend(day)) return drawWeekend(r, events, day, today, status, top, bottom, hits);
+  const int w = r.getScreenWidth();
+  const DaySplit d = splitDay(events, day);
+  const int y = drawBars(r, d, kMargin, w - 2 * kMargin, top + 6, bottom, hits);
+
+  if (d.timed.empty()) {
+    const char* msg = d.bars.empty() ? (sameDate(day, today) ? "Heute bin ich frei!" : "Keine Termine") : "";
     r.drawCenteredText(UI_12_FONT_ID, (y + bottom) / 2 - r.getLineHeight(UI_12_FONT_ID) / 2, msg, true,
                        EpdFontFamily::BOLD);
     return;
   }
 
-  // Visible hours: 07-17 by default, widened to cover every timed event.
-  int firstHour = 7;
-  int lastHour = 17;
-  for (const CalEvent* e : timed) {
-    // A segment that comes from or runs into another day does not stretch the axis.
-    const int s0 = e->startMinutesOn(dayIso);
-    const int e0 = e->endMinutesOn(dayIso);
-    if (s0 > 0) firstHour = std::min(firstHour, s0 / 60);
-    if (e0 < 24 * 60) lastHour = std::max(lastHour, (e0 + 59) / 60);
-  }
-  lastHour = std::min(lastHour, 24);
-  const int axisTop = y + 8;
-  const int axisBottom = bottom - 6;
-  const float pxPerMin = static_cast<float>(axisBottom - axisTop) / ((lastHour - firstHour) * 60);
-  const auto yOf = [&](int minutes) {
-    return axisTop + static_cast<int>((minutes - firstHour * 60) * pxPerMin);
-  };
+  Axis a{y + 8, bottom - 6, 7, 17};
+  widenHours(d, a.firstHour, a.lastHour);
+  drawAxis(r, a, kMargin + kAxisW - 6, w - kMargin);
+  drawTimed(r, d, a, kMargin + kAxisW, w - kMargin - (kMargin + kAxisW), hits);
+  if (status.showNowLine && sameDate(day, today)) drawNowLine(r, a, kMargin + kAxisW - 10, w - kMargin);
+}
 
-  for (int h = firstHour; h <= lastHour; ++h) {
-    const int ly = yOf(h * 60);
-    char buf[4];
-    std::snprintf(buf, sizeof(buf), "%02d", h % 24);
-    // Digits span roughly the lower 70% of the ascender: center them on the line.
-    r.drawText(SMALL_FONT_ID, kMargin - 4, ly - r.getFontAscenderSize(SMALL_FONT_ID) * 64 / 100, buf, true);
-    for (int x = kMargin + kAxisW - 6; x < w - kMargin; x += 4) r.drawPixel(x, ly);
-  }
+void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date anyWeekendDay,
+                 const Date today, const Status& status, const int top, const int bottom, std::vector<HitBox>* hits) {
+  if (hits) hits->clear();
+  const int w = r.getScreenWidth();
+  const Date sat = addDays(anyWeekendDay, 5 - weekdayMon0(anyWeekendDay));
+  const Date days[2] = {sat, addDays(sat, 1)};
+  const DaySplit split[2] = {splitDay(events, days[0]), splitDay(events, days[1])};
 
-  std::vector<LayoutInput> inputs;
-  inputs.reserve(timed.size());
-  for (const CalEvent* e : timed) inputs.push_back({e->startMinutesOn(dayIso), e->endMinutesOn(dayIso)});
+  constexpr int kGap = 8;
   const int areaX = kMargin + kAxisW;
-  const int areaW = w - areaX - kMargin;
-  for (const LayoutBox& b : layoutDay(inputs)) {
-    const int colW = (areaW - kColGap * (b.groupColumns - 1)) / b.groupColumns;
-    const int bx = areaX + b.column * (colW + kColGap);
-    const int bw = colW * b.colSpan + kColGap * (b.colSpan - 1);
-    const int by = yOf(std::max(b.startMin, firstHour * 60)) + 1;
-    const int bh = std::max(kMinBoxH, yOf(std::min(b.endMin, lastHour * 60)) - by - 1);
-    const int boxH = std::min(bh, axisBottom - by);
-    drawEventBox(r, *timed[b.eventIndex], dayIso, bx, by, bw, boxH);
-    if (hits) hits->push_back({bx, by, bw, boxH, timed[b.eventIndex]});
+  const int colW = (w - kMargin - areaX - kGap) / 2;
+  const int colX[2] = {areaX, areaX + colW + kGap};
+
+  // Column heads: weekday and date; today inverted.
+  const int headH = r.getLineHeight(UI_10_FONT_ID) + 8;
+  for (int i = 0; i < 2; ++i) {
+    const bool isToday = sameDate(days[i], today);
+    if (isToday) r.fillRoundedRect(colX[i], top + 4, colW, headH, 4, Color::Black);
+    char label[24];
+    std::snprintf(label, sizeof(label), "%s %d.%d.", weekdayShortDe(5 + i), days[i].day, days[i].month);
+    const int tw = r.getTextWidth(UI_10_FONT_ID, label, EpdFontFamily::BOLD);
+    r.drawText(UI_10_FONT_ID, colX[i] + (colW - tw) / 2, top + 8, label, !isToday, EpdFontFamily::BOLD);
   }
 
-  if (status.showNowLine && sameDate(day, today)) {
-    const time_t now = time(nullptr);
-    struct tm lt {};
-    localtime_r(&now, &lt);
-    const int m = lt.tm_hour * 60 + lt.tm_min;
-    if (m >= firstHour * 60 && m <= lastHour * 60) {
-      const int ny = yOf(m);
-      r.fillRect(kMargin + kAxisW - 10, ny - 1, w - kMargin - (kMargin + kAxisW - 10), 3, true);
-      r.fillRoundedRect(kMargin + kAxisW - 14, ny - 5, 10, 10, 5, Color::Black);
+  // Bars per column; the shared axis starts below the taller stack.
+  const int barsTop = top + 4 + headH + 6;
+  int axisTop = barsTop;
+  for (int i = 0; i < 2; ++i) {
+    axisTop = std::max(axisTop, drawBars(r, split[i], colX[i], colW, barsTop, bottom, hits));
+  }
+
+  Axis a{axisTop + 8, bottom - 6, 7, 17};
+  bool anyTimed = false;
+  for (const auto& d : split) {
+    widenHours(d, a.firstHour, a.lastHour);
+    anyTimed = anyTimed || !d.timed.empty();
+  }
+  if (anyTimed) drawAxis(r, a, areaX - 6, w - kMargin);
+  for (int i = 0; i < 2; ++i) {
+    if (split[i].timed.empty() && split[i].bars.empty()) {
+      const char* msg = "frei";
+      const int tw = r.getTextWidth(UI_12_FONT_ID, msg, EpdFontFamily::BOLD);
+      r.drawText(UI_12_FONT_ID, colX[i] + (colW - tw) / 2, (axisTop + bottom) / 2, msg, true, EpdFontFamily::BOLD);
+      continue;
     }
+    if (anyTimed) drawTimed(r, split[i], a, colX[i], colW, hits);
+    if (anyTimed && status.showNowLine && sameDate(days[i], today)) drawNowLine(r, a, colX[i], colX[i] + colW);
   }
 }
 
@@ -409,12 +491,34 @@ void drawMonth(const GfxRenderer& r, const std::vector<CalEvent>& events, const 
   r.drawLine(kwW, top + headH + rows * cellH, w - kMargin, top + headH + rows * cellH, true);
 }
 
+void dayTitle(const Date day, char* title, size_t titleSize, char* subtitle, size_t subtitleSize, bool withYear) {
+  if (isWeekend(day)) {
+    const Date sat = addDays(day, 5 - weekdayMon0(day));
+    const Date sun = addDays(sat, 1);
+    std::snprintf(title, titleSize, "Wochenende");
+    if (sat.month == sun.month) {
+      std::snprintf(subtitle, subtitleSize, "%d.–%d. %s · KW %d", sat.day, sun.day, monthNameDe(sun.month), isoWeek(sat));
+    } else {
+      std::snprintf(subtitle, subtitleSize, "%d.%d. – %d.%d. · KW %d", sat.day, sat.month, sun.day, sun.month,
+                    isoWeek(sat));
+    }
+    return;
+  }
+  std::snprintf(title, titleSize, "%s", weekdayNameDe(weekdayMon0(day)));
+  if (withYear) {
+    std::snprintf(subtitle, subtitleSize, "%d. %s %d · KW %d", day.day, monthNameDe(day.month), day.year, isoWeek(day));
+  } else {
+    std::snprintf(subtitle, subtitleSize, "%d. %s · KW %d", day.day, monthNameDe(day.month), isoWeek(day));
+  }
+}
+
 void drawSleepScreen(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date today,
                      const Status& status) {
   r.clearScreen();
+  char title[32];
   char subtitle[48];
-  std::snprintf(subtitle, sizeof(subtitle), "%d. %s · KW %d", today.day, monthNameDe(today.month), isoWeek(today));
-  const int top = drawHeader(r, weekdayNameDe(weekdayMon0(today)), subtitle, status);
+  dayTitle(today, title, sizeof(title), subtitle, sizeof(subtitle), false);
+  const int top = drawHeader(r, title, subtitle, status);
   drawDay(r, events, today, today, status, top, r.getScreenHeight() - 4);
 }
 

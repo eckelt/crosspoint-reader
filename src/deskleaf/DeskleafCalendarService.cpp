@@ -96,6 +96,18 @@ uint16_t batteryMillivolts() {
   return battery.readMillivolts();
 }
 
+// What the sleep screen shows for `today`: one day, or both weekend days.
+uint32_t screenHash(const std::vector<CalEvent>& events, const Date today) {
+  const std::string iso = isoString(today);
+  if (!view::isWeekend(today)) return dayHash(eventsOnDate(events, iso), iso);
+  const Date sat = addDays(today, 5 - weekdayMon0(today));
+  const std::string satIso = isoString(sat);
+  const std::string sunIso = isoString(addDays(sat, 1));
+  // Sunday's hash is chained onto Saturday's, so the pair hashes in order.
+  return dayHash(eventsOnDate(events, sunIso), sunIso) * 16777619u ^ dayHash(eventsOnDate(events, satIso), satIso) ^
+         fnv1a(reinterpret_cast<const uint8_t*>(iso.data()), iso.size());
+}
+
 view::Status viewStatus(const CalendarState& state) {
   view::Status s;
   s.lastSyncEpoch = state.lastSyncEpoch;
@@ -189,7 +201,7 @@ void CalendarService::renderSleepScreen(GfxRenderer& renderer) const {
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2, "Kalender: Uhrzeit noch nicht gesetzt");
   } else {
     view::drawSleepScreen(renderer, events, today, viewStatus(state));
-    state.sleepDayHash = dayHash(eventsOnDate(events, isoString(today)), isoString(today));
+    state.sleepDayHash = screenHash(events, today);
     saveState(state);
   }
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
@@ -203,8 +215,7 @@ bool CalendarService::backgroundRefresh(GfxRenderer& renderer, const AbortCheck 
   if (sync(events, state, &force, shouldAbort) == SyncStatus::Aborted) return false;
   Date today{};
   if (!localToday(today)) return true;
-  const std::string iso = isoString(today);
-  const uint32_t h = dayHash(eventsOnDate(events, iso), iso);
+  const uint32_t h = screenHash(events, today);
   if (!force && h == state.sleepDayHash) {
     LOG_INF("DSK", "Sleep screen unchanged");
     return true;

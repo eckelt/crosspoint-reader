@@ -3,6 +3,7 @@
 // (portrait 480x800, black/white with dithered grays). No panel refresh here.
 #include <DeskleafCalendar.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -28,6 +29,17 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
 // Timeline of one day between `top` and `bottom`.
 void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, const Status& status,
              int top, int bottom, std::vector<HitBox>* hits = nullptr);
+
+// Saturday and Sunday side by side on a shared hour axis; drawDay uses it for
+// any weekend day.
+void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, Date anyWeekendDay, Date today,
+                 const Status& status, int top, int bottom, std::vector<HitBox>* hits = nullptr);
+
+bool isWeekend(Date d);
+
+// Header texts for a day ("Freitag" / "6. November 2026 · KW 45"), or for the
+// weekend it belongs to ("Wochenende" / "7.–8. November · KW 45").
+void dayTitle(Date day, char* title, size_t titleSize, char* subtitle, size_t subtitleSize, bool withYear);
 
 // Full details of one event between `top` and `bottom`.
 void drawDetail(const GfxRenderer& r, const CalEvent& event, int top, int bottom);

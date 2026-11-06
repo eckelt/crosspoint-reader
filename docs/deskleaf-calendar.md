@@ -17,6 +17,8 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   Confirm or a header tap switches the view, a long press on Confirm (or a
   long touch) syncs, a tap on a day in week/month opens it. A tap on an event
   in the day view shows its details; Back, Confirm or a tap returns.
+- Weekends show Saturday and Sunday side by side on a shared hour axis, on
+  the sleep screen and in the day view (paging goes Friday, weekend, Monday).
 - Multi-day events show on every day they cover. Timed ones keep their times
   on the first day ("ab 09:00") and the last day ("bis 17:00"); fully covered
   days in between and all-day events show as day bars. Data older than

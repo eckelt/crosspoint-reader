@@ -8,6 +8,7 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <ctime>
 
@@ -83,7 +84,13 @@ void CalendarActivity::step(const int direction) {
     case View::Detail:
       return;
     case View::Day:
-      cursor = deskleaf::addDays(cursor, direction);
+      if (deskleaf::view::isWeekend(cursor)) {
+        // The weekend is one page: step to Friday or Monday.
+        const deskleaf::Date sat = deskleaf::addDays(cursor, 5 - deskleaf::weekdayMon0(cursor));
+        cursor = deskleaf::addDays(sat, direction > 0 ? 2 : -1);
+      } else {
+        cursor = deskleaf::addDays(cursor, direction);
+      }
       break;
     case View::Week:
       cursor = deskleaf::addDays(cursor, 7 * direction);
@@ -175,7 +182,11 @@ void CalendarActivity::loop() {
   if (!mappedInput.wasScreenTapped(tx, ty)) return;
   if (ty < headerHeight) {
     // Tapping the header returns to today in the day view, or cycles views when already there.
-    if (view == View::Day && deskleaf::sameDate(cursor, today)) {
+    const auto weekendOf = [](deskleaf::Date d) { return deskleaf::addDays(d, 5 - deskleaf::weekdayMon0(d)); };
+    const bool onToday = deskleaf::sameDate(cursor, today) ||
+                         (deskleaf::view::isWeekend(cursor) && deskleaf::view::isWeekend(today) &&
+                          deskleaf::sameDate(weekendOf(cursor), weekendOf(today)));
+    if (view == View::Day && onToday) {
       cycleView();
     } else {
       view = View::Day;
@@ -251,9 +262,7 @@ void CalendarActivity::render(RenderLock&&) {
   char subtitle[48];
   switch (view) {
     case View::Day:
-      std::snprintf(title, sizeof(title), "%s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(cursor)));
-      std::snprintf(subtitle, sizeof(subtitle), "%d. %s %d · KW %d", cursor.day, deskleaf::monthNameDe(cursor.month),
-                    cursor.year, deskleaf::isoWeek(cursor));
+      view_ns::dayTitle(cursor, title, sizeof(title), subtitle, sizeof(subtitle), true);
       break;
     case View::Week: {
       const deskleaf::Date mon = deskleaf::addDays(cursor, -deskleaf::weekdayMon0(cursor));
@@ -267,11 +276,18 @@ void CalendarActivity::render(RenderLock&&) {
       std::snprintf(title, sizeof(title), "%s", deskleaf::monthNameDe(cursor.month));
       std::snprintf(subtitle, sizeof(subtitle), "%d", cursor.year);
       break;
-    case View::Detail:
+    case View::Detail: {
+      // The event's own first day: on the weekend page it may be Sunday.
+      deskleaf::Date d = cursor;
+      if (detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+        const std::string iso = events[detailIndex].startDate();
+        if (iso.size() == 10) d = {std::atoi(iso.c_str()), std::atoi(iso.c_str() + 5), std::atoi(iso.c_str() + 8)};
+      }
       std::snprintf(title, sizeof(title), "Termin");
-      std::snprintf(subtitle, sizeof(subtitle), "%s, %d. %s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(cursor)),
-                    cursor.day, deskleaf::monthNameDe(cursor.month));
+      std::snprintf(subtitle, sizeof(subtitle), "%s, %d. %s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(d)), d.day,
+                    deskleaf::monthNameDe(d.month));
       break;
+    }
   }
 
   headerHeight = view_ns::drawHeader(renderer, title, subtitle, status);
