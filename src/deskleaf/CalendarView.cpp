@@ -162,24 +162,23 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   }
   if (e.isImportant()) r.fillRect(x, y, 4, h, textBlack);
 
-  // Icons: 2x from 30-minute boxes up, so they look the same in most boxes;
-  // 1x (the 12 px originals) only in very short ones.
+  // Title-row icons are 20 px; the Obsidian mark is 12 px, 2x when there is room.
   const int scale = h >= 26 ? 2 : 1;
   const int iconPx = 12 * scale;
   const int maxY = y + h - 2;
   const int titleH = r.getLineHeight(UI_10_FONT_ID);
-  const int iconY = y + 3 + std::max(0, (titleH - iconPx) / 2);
+  const int iconY = y + 3 + std::max(-1, (titleH - icons::kSize) / 2);
 
   // Right side, filled right to left: where it happens, then series, attachment.
   int right = x + w - 4;
-  const auto pushIcon = [&](const unsigned char* bitmap, int bw) {
-    right -= bw * scale;
-    drawIcon(r, bitmap, bw, 12, right, iconY, scale, textBlack);
+  const auto pushIcon = [&](const unsigned char* bitmap) {
+    right -= icons::kSize;
+    drawIcon(r, bitmap, icons::kSize, icons::kSize, right, iconY, 1, textBlack);
     right -= 3;
   };
-  if (const unsigned char* place = placeIcon(e)) pushIcon(place, 12);
-  if (e.isRecurring) pushIcon(e.isMoved ? icons::kSeriesMoved : icons::kSeries, e.isMoved ? 13 : 12);
-  if (e.hasAttachments) pushIcon(icons::kAttachment, 12);
+  if (const unsigned char* place = placeIcon(e)) pushIcon(place);
+  if (e.isRecurring) pushIcon(e.isMoved ? icons::kSeriesMoved : icons::kSeries);
+  if (e.hasAttachments) pushIcon(icons::kAttachment);
   const bool hasNote = e.hasObsidianNote || e.location.find("obsidian://") != std::string::npos;
   if (hasNote && h >= iconPx + 8 + titleH) {
     drawIcon(r, icons::kObsidian, 12, 12, x + w - 4 - iconPx, y + h - 3 - iconPx, scale, textBlack);
