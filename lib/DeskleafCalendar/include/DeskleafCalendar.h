@@ -16,7 +16,7 @@
 
 namespace deskleaf {
 
-enum class MeetingPlatform : uint8_t { None, Teams, Meet, Ne, LinkedIn };
+enum class MeetingPlatform : uint8_t { None, Teams, Meet, Ne, LinkedIn, Phone };
 
 struct CalEvent {
   // Raw payload fields (also the input of the semantic hash).
@@ -38,7 +38,11 @@ struct CalEvent {
   int numAttendees = 0;
 
   // Derived for display.
+  // Call service from the bridge field, else recognised in location, notes and
+  // title: links, "Microsoft Teams-Besprechung", phone numbers, "Telefon".
   MeetingPlatform platform() const;
+  // A physical place: a location that is no link, call service or phone number.
+  bool isOnSite() const;
   bool isImportant() const { return importance == "high"; }
   // Location without the bridge's room prefixes ("DE-", "; " ...).
   std::string displayLocation() const;

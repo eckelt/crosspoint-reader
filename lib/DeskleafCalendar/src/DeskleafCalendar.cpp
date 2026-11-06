@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstdlib>
+#include <initializer_list>
 #include <cstring>
 
 namespace deskleaf {
@@ -72,17 +74,64 @@ uint32_t fnv1a(const uint8_t* data, size_t len, uint32_t seed) {
   return h;
 }
 
+namespace {
+std::string lower(const std::string& s) {
+  std::string out = s;
+  for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return out;
+}
+
+bool hasAny(const std::string& haystack, std::initializer_list<const char*> needles) {
+  for (const char* n : needles) {
+    if (haystack.find(n) != std::string::npos) return true;
+  }
+  return false;
+}
+
+// "+49 40 1234567", "040/123 45 67", "tel:+49...": mostly digits, at least 6.
+bool looksLikePhone(const std::string& s) {
+  if (s.find("tel:") != std::string::npos) return true;
+  int digits = 0;
+  for (const char c : s) {
+    if (c >= '0' && c <= '9') {
+      ++digits;
+    } else if (!(c == ' ' || c == '+' || c == '-' || c == '/' || c == '(' || c == ')' || c == '.')) {
+      return false;
+    }
+  }
+  return digits >= 6;
+}
+}  // namespace
+
 MeetingPlatform CalEvent::platform() const {
   if (meetingPlatformRaw == "meet") return MeetingPlatform::Meet;
   if (meetingPlatformRaw == "teams") return MeetingPlatform::Teams;
   if (meetingPlatformRaw == "ne") return MeetingPlatform::Ne;
   if (meetingPlatformRaw == "linkedin") return MeetingPlatform::LinkedIn;
-  if (location.find("meet.google.com") != std::string::npos) return MeetingPlatform::Meet;
-  if (location.find("join.ecke.lt") != std::string::npos) return MeetingPlatform::Ne;
-  if (location.find("linkedin.com") != std::string::npos || subject.find("LinkedIn") != std::string::npos) {
-    return MeetingPlatform::LinkedIn;
+  const std::string loc = lower(location);
+  const std::string text = loc + "\n" + lower(notes);
+  if (hasAny(text, {"join.ecke.lt"})) return MeetingPlatform::Ne;
+  // The bridge strips the Teams footer (with its link) before it looks for one;
+  // the location usually still says "Microsoft Teams-Besprechung".
+  if (hasAny(text, {"teams.microsoft.com", "teams.live.com", "microsoft teams", "teams-besprechung",
+                    "teams meeting", "teams-meeting"})) {
+    return MeetingPlatform::Teams;
+  }
+  if (hasAny(text, {"meet.google.com", "google meet"})) return MeetingPlatform::Meet;
+  if (hasAny(text, {"linkedin.com"}) || subject.find("LinkedIn") != std::string::npos) return MeetingPlatform::LinkedIn;
+  const std::string title = lower(subject);
+  if (looksLikePhone(location) || hasAny(loc, {"telefon", "anruf", "phone"}) ||
+      hasAny(title, {"telefon", "anruf", "phone call"})) {
+    return MeetingPlatform::Phone;
   }
   return MeetingPlatform::None;
+}
+
+bool CalEvent::isOnSite() const {
+  if (platform() != MeetingPlatform::None) return false;
+  const std::string loc = lower(displayLocation());
+  if (loc.empty() || loc.find("://") != std::string::npos) return false;
+  return !hasAny(loc, {"online", "zoom", "webex", "whereby", "jitsi", "facetime", "skype", "teams", "meet"});
 }
 
 std::string CalEvent::displayLocation() const {

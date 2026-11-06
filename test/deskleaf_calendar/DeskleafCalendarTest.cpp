@@ -104,6 +104,27 @@ static void testMultiDay() {
   CHECK(!ev3[0].barOn("2026-11-05") && ev3[0].barOn("2026-11-06") && !ev3[0].barOn("2026-11-07"));
 }
 
+static void testPlatforms() {
+  CalEvent e;
+  e.location = "Microsoft Teams-Besprechung";
+  CHECK(e.platform() == MeetingPlatform::Teams && !e.isOnSite());
+  e.location = "+49 40 123 456 78";
+  CHECK(e.platform() == MeetingPlatform::Phone && !e.isOnSite());
+  e.location = "";
+  e.subject = "Telefontermin Mobilitätsberatung";
+  CHECK(e.platform() == MeetingPlatform::Phone);
+  e.subject = "Workshop";
+  e.location = "Hobenköök, Stockmeyerstraße 43, Hamburg";
+  CHECK(e.platform() == MeetingPlatform::None && e.isOnSite());
+  e.location = "Online";
+  CHECK(!e.isOnSite());
+  e.location = "https://join.ecke.lt/abc";
+  CHECK(e.platform() == MeetingPlatform::Ne);
+  e.location = "";
+  e.meetingPlatformRaw = "teams";
+  CHECK(e.platform() == MeetingPlatform::Teams);
+}
+
 static void testLocation() {
   CalEvent e;
   e.location = "; DE-HB-Raum 4";
@@ -171,6 +192,7 @@ int main() {
   testHashContract();
   testDaySelection();
   testMultiDay();
+  testPlatforms();
   testLocation();
   testLayout();
   testDates();

@@ -36,6 +36,8 @@ const char* platformLabel(MeetingPlatform p) {
       return "NE";
     case MeetingPlatform::LinkedIn:
       return "LinkedIn";
+    case MeetingPlatform::Phone:
+      return "Telefon";
     case MeetingPlatform::None:
       break;
   }
@@ -114,12 +116,12 @@ const unsigned char* placeIcon(const CalEvent& e) {
       return icons::kNE;
     case MeetingPlatform::LinkedIn:
       return icons::kLinkedIn;
+    case MeetingPlatform::Phone:
+      return icons::kPhone;
     case MeetingPlatform::None:
       break;
   }
-  const std::string loc = e.displayLocation();
-  if (loc.empty() || loc.find("://") != std::string::npos) return nullptr;
-  return icons::kOnSite;
+  return e.isOnSite() ? icons::kOnSite : nullptr;
 }
 
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
