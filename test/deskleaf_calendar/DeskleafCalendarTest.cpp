@@ -1,6 +1,7 @@
 // Host tests for lib/DeskleafCalendar. Hash vectors are the contract vectors
 // of the Swift bridge (deskleaf-display: EinkalHashTests.swift).
 //   ./test/deskleaf_calendar/run.sh
+#include <algorithm>
 #include <DeskleafCalendar.h>
 
 #include <cstdio>
@@ -288,8 +289,24 @@ static void testNotes() {
   CHECK(parseNotes("").empty());
 }
 
+static void testBatteryHistory() {
+  CHECK(batteryHistoryLines({}).empty());
+  const auto one = batteryHistoryLines({{1794040705, 4292}, {1794041605, 4287}});
+  CHECK(one.size() == 1 && one[0] == "XHIS:1794040705:4292;1794041605:4287\n");
+  std::vector<BatteryReading> many;
+  for (int i = 0; i < 40; ++i) many.push_back({1794040705LL + i * 900, static_cast<uint16_t>(4200 - i)});
+  const auto lines = batteryHistoryLines(many);
+  size_t items = 0;
+  for (const auto& l : lines) {
+    CHECK(l.size() <= 240 && l.rfind("XHIS:", 0) == 0 && l.back() == '\n');
+    items += static_cast<size_t>(std::count(l.begin(), l.end(), ';')) + 1;
+  }
+  CHECK(lines.size() > 1 && items == 40);
+}
+
 int main() {
   testHashContract();
+  testBatteryHistory();
   testNotes();
   testWeekSync();
   testDaySelection();

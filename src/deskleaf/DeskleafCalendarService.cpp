@@ -15,6 +15,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <algorithm>
+#include <cstdlib>
 #include <atomic>
 #include <cstring>
 #include <memory>
@@ -38,6 +40,10 @@ constexpr const char* kIndexTmp = "/.crosspoint/deskleaf/weeks.idx.tmp";
 // Single payload of builds before the week sync; removed after the first one.
 constexpr const char* kLegacyPayloadPath = "/.crosspoint/deskleaf/calendar.json";
 constexpr const char* kStatePath = "/.crosspoint/deskleaf/state.json";
+// Battery readings of syncs that never reached the bridge: "epoch mV" lines.
+constexpr const char* kHistoryPath = "/.crosspoint/deskleaf/battery.hist";
+constexpr const char* kHistoryTmp = "/.crosspoint/deskleaf/battery.hist.tmp";
+constexpr size_t kMaxHistory = 1000;  // ~10 days of 15-minute wakes
 constexpr size_t kMaxFile = 2 * 1024 * 1024;  // a week, the state or the legacy payload (PSRAM)
 // First refresh after the reader goes to sleep; later ones follow the schedule.
 constexpr uint32_t kFirstWakeMinutes = 2;
@@ -132,6 +138,43 @@ void setIndexHash(std::vector<WeekEntry>& index, const std::string& monday, uint
     }
   }
   index.push_back({monday, hash});
+}
+
+std::vector<BatteryReading> loadHistory() {
+  std::vector<BatteryReading> history;
+  size_t len = 0;
+  PsBuffer buf = readFile(kHistoryPath, len);
+  if (!buf) return history;
+  const char* p = buf.get();
+  const char* end = p + len;
+  while (p < end) {
+    char* next = nullptr;
+    const long long epoch = strtoll(p, &next, 10);
+    if (next == p) break;
+    const unsigned long mv = strtoul(next, &next, 10);
+    if (epoch > 1700000000LL && mv >= 1000 && mv <= 5000) {
+      history.push_back({static_cast<int64_t>(epoch), static_cast<uint16_t>(mv)});
+    }
+    const char* nl = static_cast<const char*>(memchr(next, '\n', static_cast<size_t>(end - next)));
+    p = nl ? nl + 1 : end;
+  }
+  return history;
+}
+
+void saveHistory(const std::vector<BatteryReading>& history) {
+  if (history.empty()) {
+    Storage.remove(kHistoryPath);
+    return;
+  }
+  std::string out;
+  out.reserve(history.size() * 16);
+  char line[32];
+  for (const BatteryReading& r : history) {
+    snprintf(line, sizeof(line), "%lld %u\n", static_cast<long long>(r.epoch), static_cast<unsigned>(r.millivolts));
+    out += line;
+  }
+  Storage.ensureDirectoryExists(kDir);
+  writeFileAtomic(kHistoryPath, kHistoryTmp, out.data(), out.size());
 }
 
 // The window around today that the device keeps; its set hash goes into WREQ.
@@ -338,9 +381,27 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
 
   std::vector<WeekEntry> index = loadIndex();
   const std::vector<WeekEntry> window = windowOf(today, index);
+  const uint16_t millivolts = batteryMillivolts();
   snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d\n", static_cast<unsigned long>(weekSetHash(window)),
-           static_cast<unsigned>(batteryMillivolts()), window.front().monday.c_str(), kWindowWeeks);
-  SyncResult r = syncWithBridge(line, shouldAbort);
+           static_cast<unsigned>(millivolts), window.front().monday.c_str(), kWindowWeeks);
+  // Readings of syncs that missed the bridge go first, as XHIS lines.
+  std::vector<BatteryReading> history = loadHistory();
+  const std::vector<std::string> historyLines = batteryHistoryLines(history);
+  SyncResult r = syncWithBridge(line, shouldAbort, 5, 45000, &historyLines);
+  size_t delivered = 0;
+  for (size_t i = 0; i < r.preambleSent && i < historyLines.size(); ++i) {
+    delivered += static_cast<size_t>(std::count(historyLines[i].begin(), historyLines[i].end(), ';')) + 1;
+  }
+  const bool keepReading = !r.requestSent && r.status != SyncStatus::Aborted;
+  if (delivered > 0 || keepReading) {
+    history.erase(history.begin(), history.begin() + static_cast<std::ptrdiff_t>(std::min(delivered, history.size())));
+    // The WREQ carries the reading when it arrives; otherwise keep it for later.
+    if (keepReading) history.push_back({static_cast<int64_t>(time(nullptr)), millivolts});
+    if (history.size() > kMaxHistory) {
+      history.erase(history.begin(), history.end() - static_cast<std::ptrdiff_t>(kMaxHistory));
+    }
+    saveHistory(history);
+  }
   takeTimezone(r.bridgeTz);
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {

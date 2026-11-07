@@ -59,6 +59,12 @@ every week it covers, and the device merges the weeks it loads without
 duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
 `WeekSyncTests.swift`.
 
+Syncs that never reach the bridge keep their battery reading in
+`battery.hist`; the next sync sends them first as
+`XHIS:<epoch>:<mV>;...` lines (each one BLE write), and the bridge files them
+under the X4 Pro with their own time. A bridge without XHIS refuses the line;
+the readings then stay on the card and the sync goes on.
+
 The ESP32-C3 Deskleaf keeps its `REQ` payload. Until the first week sync the
 X4 Pro still shows the `calendar.json` of earlier builds. Without a set clock the X4 Pro
 sends one `REQ` first to get `TIME`, then the `WREQ`. While no timezone was

@@ -9,6 +9,8 @@
 // is open, so callers run this from the calendar activity or the timer wake.
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace deskleaf {
 
@@ -32,14 +34,17 @@ struct SyncResult {
   char bridgeTz[64] = "";    // POSIX TZ the bridge sent, empty if none
   char* payload = nullptr;   // NUL-terminated body, owned; release with freePayload()
   size_t payloadLen = 0;
+  size_t preambleSent = 0;   // leading preamble lines the bridge accepted
+  bool requestSent = false;  // the request line reached the bridge
 };
 
-// Scans up to scanSeconds, connects, writes `requestLine` (REQ or WREQ, with
-// its newline) and waits for the answer: up to timeoutMs until a transfer
-// starts, then as long as chunks keep arriving. Leaves the BLE stack as it
-// found it.
+// Scans up to scanSeconds, connects, writes the `preamble` lines (e.g. XHIS
+// battery history; a refused line ends the preamble, not the sync), then
+// `requestLine` (REQ or WREQ, with its newline), and waits for the answer: up
+// to timeoutMs until a transfer starts, then as long as chunks keep arriving.
+// Leaves the BLE stack as it found it.
 SyncResult syncWithBridge(const char* requestLine, AbortCheck shouldAbort = nullptr, uint8_t scanSeconds = 5,
-                          uint32_t timeoutMs = 45000);
+                          uint32_t timeoutMs = 45000, const std::vector<std::string>* preamble = nullptr);
 
 void freePayload(SyncResult& result);
 

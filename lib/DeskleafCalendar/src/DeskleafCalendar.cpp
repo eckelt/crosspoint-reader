@@ -689,4 +689,27 @@ std::string plainNotes(const std::string& notes) {
   return out;
 }
 
+// --- Battery history -----------------------------------------------------------
+
+std::vector<std::string> batteryHistoryLines(const std::vector<BatteryReading>& readings, const size_t maxLen) {
+  std::vector<std::string> lines;
+  std::string line;
+  char item[32];
+  for (const BatteryReading& r : readings) {
+    const int n = std::snprintf(item, sizeof(item), "%lld:%u", static_cast<long long>(r.epoch),
+                                static_cast<unsigned>(r.millivolts));
+    if (n <= 0) continue;
+    // "XHIS:" + items joined by ';' + "\n" must stay within maxLen.
+    const size_t needed = (line.empty() ? 5 : line.size() + 1) + static_cast<size_t>(n) + 1;
+    if (!line.empty() && needed > maxLen) {
+      lines.push_back(line + "\n");
+      line.clear();
+    }
+    line += line.empty() ? "XHIS:" : ";";
+    line += item;
+  }
+  if (!line.empty()) lines.push_back(line + "\n");
+  return lines;
+}
+
 }  // namespace deskleaf

@@ -151,7 +151,7 @@ void resetRx() {
 }
 
 SyncStatus connectAndRequest(NimBLEClient*& client, const char* requestLine, AbortCheck shouldAbort,
-                             uint8_t scanSeconds) {
+                             uint8_t scanSeconds, const std::vector<std::string>* preamble, SyncResult& result) {
   NimBLEScan* scan = NimBLEDevice::getScan();
   scan->setActiveScan(true);
   scan->setInterval(100);
@@ -188,7 +188,20 @@ SyncStatus connectAndRequest(NimBLEClient*& client, const char* requestLine, Abo
   NimBLERemoteCharacteristic* chr = svc ? svc->getCharacteristic(kCharUuid) : nullptr;
   if (!chr || !chr->canNotify() || !chr->subscribe(true, onNotify)) return SyncStatus::ConnectFailed;
 
+  if (preamble) {
+    for (const std::string& line : *preamble) {
+      // An older bridge refuses unknown lines; keep the rest for later.
+      if (!chr->writeValue(line, true)) break;
+      result.preambleSent += 1;
+      resetTaskWatchdogIfSubscribed();
+    }
+    if (!preamble->empty()) {
+      LOG_INF("DSK", "Sent %u of %u history lines", static_cast<unsigned>(result.preambleSent),
+              static_cast<unsigned>(preamble->size()));
+    }
+  }
   if (!chr->writeValue(std::string(requestLine), true)) return SyncStatus::ConnectFailed;
+  result.requestSent = true;
   LOG_INF("DSK", "Sent %s", requestLine);
   return SyncStatus::NewPayload;  // "request sent"; the caller waits for the answer
 }
@@ -196,7 +209,7 @@ SyncStatus connectAndRequest(NimBLEClient*& client, const char* requestLine, Abo
 }  // namespace
 
 SyncResult syncWithBridge(const char* requestLine, const AbortCheck shouldAbort, const uint8_t scanSeconds,
-                          const uint32_t timeoutMs) {
+                          const uint32_t timeoutMs, const std::vector<std::string>* preamble) {
   SyncResult result;
   if (!rx.mutex) rx.mutex = xSemaphoreCreateMutex();
   if (!rx.mutex) {
@@ -214,7 +227,7 @@ SyncResult syncWithBridge(const char* requestLine, const AbortCheck shouldAbort,
   }
 
   NimBLEClient* client = nullptr;
-  SyncStatus status = connectAndRequest(client, requestLine, shouldAbort, scanSeconds);
+  SyncStatus status = connectAndRequest(client, requestLine, shouldAbort, scanSeconds, preamble, result);
   if (status == SyncStatus::NewPayload) {
     const uint32_t start = millis();
     status = SyncStatus::Timeout;

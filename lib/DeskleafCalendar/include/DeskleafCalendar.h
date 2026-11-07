@@ -161,6 +161,16 @@ bool parseWeekFrames(const char* body, size_t len, std::vector<WeekFrame>& out);
 // multi-day events they share, so merging loaded weeks needs this.
 void appendUnique(std::vector<CalEvent>& into, std::vector<CalEvent>& more);
 
+// --- Battery history (XHIS) ----------------------------------------------
+// Readings taken while the bridge was out of reach, sent before the next
+// WREQ as lines "XHIS:<epoch>:<mV>;<epoch>:<mV>...\n" of at most maxLen bytes,
+// so each fits one BLE write. Parsed by DeskleafCore/BatteryHistory.swift.
+struct BatteryReading {
+  int64_t epoch;
+  uint16_t millivolts;
+};
+std::vector<std::string> batteryHistoryLines(const std::vector<BatteryReading>& readings, size_t maxLen = 240);
+
 // --- Notes (Markdown from the Obsidian vault) ----------------------------
 // Line-based subset for the e-ink notes: headings, bullets, tasks and rules.
 // HTML comments are dropped; **bold**, `code` and links lose their markup
