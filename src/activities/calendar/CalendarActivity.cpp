@@ -183,16 +183,29 @@ void CalendarActivity::loop() {
   }
   if (!mappedInput.wasScreenTapped(tx, ty)) return;
   if (ty < headerHeight) {
-    // Tapping the header returns to today in the day view, or cycles views when already there.
-    const auto weekendOf = [](deskleaf::Date d) { return deskleaf::addDays(d, 5 - deskleaf::weekdayMon0(d)); };
-    const bool onToday = deskleaf::sameDate(cursor, today) ||
-                         (deskleaf::view::isWeekend(cursor) && deskleaf::view::isWeekend(today) &&
-                          deskleaf::sameDate(weekendOf(cursor), weekendOf(today)));
-    if (view == View::Day && onToday) {
+    // Tapping the header switches to the next view when today is already shown,
+    // otherwise it returns to today in the current view.
+    const auto weekMonday = [](deskleaf::Date d) { return deskleaf::addDays(d, -deskleaf::weekdayMon0(d)); };
+    bool onToday = false;
+    switch (view) {
+      case View::Day:
+        onToday = deskleaf::sameDate(cursor, today) ||
+                  (deskleaf::view::isWeekend(cursor) && deskleaf::view::isWeekend(today) &&
+                   deskleaf::sameDate(weekMonday(cursor), weekMonday(today)));
+        break;
+      case View::Week:
+        onToday = deskleaf::sameDate(weekMonday(cursor), weekMonday(today));
+        break;
+      case View::Month:
+        onToday = cursor.year == today.year && cursor.month == today.month;
+        break;
+      case View::Detail:
+        break;
+    }
+    cursor = today;
+    if (onToday) {
       cycleView();
     } else {
-      view = View::Day;
-      cursor = today;
       requestUpdate();
     }
     return;
@@ -215,18 +228,17 @@ void CalendarActivity::loop() {
     }
   } else if (view == View::Month) {
     // Same grid geometry as view::drawMonth.
-    const int w = renderer.getScreenWidth();
-    const int kwW = 34;
-    const int colW = (w - kwW - 8) / 7;
+    const int colW = deskleaf::view::monthColumnWidth(renderer.getScreenWidth());
+    const int gridX = deskleaf::view::kMonthGridX;
     const int headH = renderer.getLineHeight(SMALL_FONT_ID) + 6;
     const deskleaf::Date first{cursor.year, cursor.month, 1};
     const int lead = deskleaf::weekdayMon0(first);
     const int rows = (lead + deskleaf::daysInMonth(cursor.year, cursor.month) + 6) / 7;
     const int bottom = renderer.getScreenHeight() - UITheme::getInstance().getMetrics().buttonHintsHeight;
     const int cellH = (bottom - headerHeight - headH) / rows;
-    const int col = (tx - kwW) / colW;
+    const int col = (tx - gridX) / colW;
     const int row = (ty - headerHeight - headH) / cellH;
-    if (tx >= kwW && col >= 0 && col < 7 && row >= 0 && row < rows) {
+    if (tx >= gridX && col >= 0 && col < 7 && row >= 0 && row < rows) {
       const deskleaf::Date d = deskleaf::addDays(first, row * 7 + col - lead);
       if (d.month == cursor.month) {
         cursor = d;

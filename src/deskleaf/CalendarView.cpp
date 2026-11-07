@@ -568,55 +568,64 @@ void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
 void drawMonth(const GfxRenderer& r, const std::vector<CalEvent>& events, const int year, const int month,
                const Date today, const int top, const int bottom) {
   const int w = r.getScreenWidth();
-  const int kwW = 34;
-  const int colW = (w - kwW - kMargin) / 7;
-  const int headH = r.getLineHeight(SMALL_FONT_ID) + 6;
+  const int x0 = kMonthGridX;
+  const int colW = monthColumnWidth(w);
+  const int gridR = x0 + 7 * colW;
+  const int lh = r.getLineHeight(SMALL_FONT_ID);
+  const int headH = lh + 6;
   const Date first{year, month, 1};
   const int lead = weekdayMon0(first);
   const int days = daysInMonth(year, month);
   const int rows = (lead + days + 6) / 7;
   const int cellH = (bottom - top - headH) / rows;
 
-  r.drawText(SMALL_FONT_ID, 4, top + 2, "KW", true);
   for (int c = 0; c < 7; ++c) {
-    r.drawText(SMALL_FONT_ID, kwW + c * colW + 4, top + 2, weekdayShortDe(c), true, EpdFontFamily::BOLD);
+    r.drawText(SMALL_FONT_ID, x0 + c * colW + 4, top + 2, weekdayShortDe(c), true, EpdFontFamily::BOLD);
   }
   for (int row = 0; row < rows; ++row) {
     const int y = top + headH + row * cellH;
     const Date rowMonday = addDays(first, row * 7 - lead);
-    r.drawText(SMALL_FONT_ID, 4, y + 4, std::to_string(isoWeek(rowMonday)).c_str(), true);
-    r.drawLine(kwW, y, w - kMargin, y, true);
+    r.drawLine(x0, y, gridR, y, true);
     for (int c = 0; c < 7; ++c) {
       const Date d = addDays(rowMonday, c);
-      if (d.month != month) continue;
-      const int x = kwW + c * colW;
-      const bool isToday = sameDate(d, today);
-      if (isToday) {
-        r.fillRect(x + 1, y + 1, colW - 2, cellH - 2, true);
-      } else if (c >= 5) {
-        r.fillRectDither(x + 1, y + 1, colW - 2, cellH - 2, Color::LightGray);
-      }
-      const std::string num = std::to_string(d.day);
-      r.drawText(UI_10_FONT_ID, x + 4, y + 3, num.c_str(), !isToday, EpdFontFamily::BOLD);
-
-      // One line per event while it fits, then a count.
-      const auto dayEvents = eventsOnDate(events, isoString(d));
-      const int lh = r.getLineHeight(SMALL_FONT_ID);
-      int ty = y + 5 + r.getLineHeight(UI_10_FONT_ID);
-      const int maxLines = std::max(0, (y + cellH - 2 - ty) / lh);
-      for (int k = 0; k < static_cast<int>(dayEvents.size()) && k < maxLines; ++k) {
-        std::string t;
-        if (k == maxLines - 1 && k + 1 < static_cast<int>(dayEvents.size())) {
-          t = "+" + std::to_string(dayEvents.size() - k);
-        } else {
-          t = r.truncatedText(SMALL_FONT_ID, dayEvents[k]->subject.c_str(), colW - 6);
+      const int x = x0 + c * colW;
+      const bool inMonth = d.month == month;
+      const bool isToday = inMonth && sameDate(d, today);
+      // The calendar week sits at the bottom of the Monday cell, also when
+      // that Monday belongs to the previous month.
+      const bool showsWeek = c == 0;
+      if (inMonth) {
+        if (isToday) {
+          r.fillRect(x + 1, y + 1, colW - 2, cellH - 2, true);
+        } else if (c >= 5) {
+          r.fillRectDither(x + 1, y + 1, colW - 2, cellH - 2, Color::LightGray);
         }
-        r.drawText(SMALL_FONT_ID, x + 3, ty, t.c_str(), !isToday);
-        ty += lh;
+        const std::string num = std::to_string(d.day);
+        r.drawText(UI_10_FONT_ID, x + 4, y + 3, num.c_str(), !isToday, EpdFontFamily::BOLD);
+
+        // One line per event while it fits, then a count.
+        const auto dayEvents = eventsOnDate(events, isoString(d));
+        int ty = y + 5 + r.getLineHeight(UI_10_FONT_ID);
+        const int textBottom = y + cellH - 2 - (showsWeek ? lh : 0);
+        const int maxLines = std::max(0, (textBottom - ty) / lh);
+        for (int k = 0; k < static_cast<int>(dayEvents.size()) && k < maxLines; ++k) {
+          std::string t;
+          if (k == maxLines - 1 && k + 1 < static_cast<int>(dayEvents.size())) {
+            t = "+" + std::to_string(dayEvents.size() - k);
+          } else {
+            t = r.truncatedText(SMALL_FONT_ID, dayEvents[k]->subject.c_str(), colW - 6);
+          }
+          r.drawText(SMALL_FONT_ID, x + 3, ty, t.c_str(), !isToday);
+          ty += lh;
+        }
+      }
+      if (showsWeek) {
+        const std::string kw = "KW " + std::to_string(isoWeek(rowMonday));
+        r.drawText(SMALL_FONT_ID, x + 3, y + cellH - 1 - lh, kw.c_str(), !isToday);
       }
     }
   }
-  r.drawLine(kwW, top + headH + rows * cellH, w - kMargin, top + headH + rows * cellH, true);
+  r.drawLine(x0, top + headH + rows * cellH, gridR, top + headH + rows * cellH, true);
 }
 
 void dayTitle(const Date day, char* title, size_t titleSize, char* subtitle, size_t subtitleSize, bool withYear) {

@@ -51,6 +51,10 @@ void drawDetail(const GfxRenderer& r, const CalEvent& event, int top, int bottom
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, int top, int bottom);
 
 // Month grid with ISO week numbers and event markers.
+// Month grid: seven equal columns between these side margins (tap mapping uses it too).
+constexpr int kMonthGridX = 4;
+inline int monthColumnWidth(int screenW) { return (screenW - 2 * kMonthGridX) / 7; }
+
 void drawMonth(const GfxRenderer& r, const std::vector<CalEvent>& events, int year, int month, Date today, int top,
                int bottom);
 
