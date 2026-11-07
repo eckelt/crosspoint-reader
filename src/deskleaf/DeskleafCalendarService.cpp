@@ -15,6 +15,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <sys/time.h>
+
 #include <algorithm>
 #include <cstdlib>
 #include <atomic>
@@ -44,6 +46,10 @@ constexpr const char* kStatePath = "/.crosspoint/deskleaf/state.json";
 constexpr const char* kHistoryPath = "/.crosspoint/deskleaf/battery.hist";
 constexpr const char* kHistoryTmp = "/.crosspoint/deskleaf/battery.hist.tmp";
 constexpr size_t kMaxHistory = 1000;  // ~10 days of 15-minute wakes
+// Events the X4 Pro saw itself, sent as XACT: "epochMs type" lines.
+constexpr const char* kActivityPath = "/.crosspoint/deskleaf/activity.hist";
+constexpr const char* kActivityTmp = "/.crosspoint/deskleaf/activity.hist.tmp";
+constexpr size_t kMaxActivities = 500;
 constexpr size_t kMaxFile = 2 * 1024 * 1024;  // a week, the state or the legacy payload (PSRAM)
 // First refresh after the reader goes to sleep; later ones follow the schedule.
 constexpr uint32_t kFirstWakeMinutes = 2;
@@ -177,6 +183,58 @@ void saveHistory(const std::vector<BatteryReading>& history) {
   writeFileAtomic(kHistoryPath, kHistoryTmp, out.data(), out.size());
 }
 
+int64_t nowMs() {
+  struct timeval tv {};
+  gettimeofday(&tv, nullptr);
+  return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
+}
+
+std::vector<ActivityRecord> loadActivities() {
+  std::vector<ActivityRecord> records;
+  size_t len = 0;
+  PsBuffer buf = readFile(kActivityPath, len);
+  if (!buf) return records;
+  const char* p = buf.get();
+  const char* end = p + len;
+  while (p < end) {
+    char* next = nullptr;
+    const long long ms = strtoll(p, &next, 10);
+    if (next == p) break;
+    const unsigned long type = strtoul(next, &next, 10);
+    if (ms > 1700000000000LL && type >= 4 && type <= 6) {
+      records.push_back({static_cast<int64_t>(ms), static_cast<ActivityType>(type)});
+    }
+    const char* nl = static_cast<const char*>(memchr(next, '\n', static_cast<size_t>(end - next)));
+    p = nl ? nl + 1 : end;
+  }
+  return records;
+}
+
+void saveActivities(const std::vector<ActivityRecord>& records) {
+  if (records.empty()) {
+    Storage.remove(kActivityPath);
+    return;
+  }
+  std::string out;
+  char line[40];
+  for (const ActivityRecord& r : records) {
+    snprintf(line, sizeof(line), "%lld %u\n", static_cast<long long>(r.epochMs), static_cast<unsigned>(r.type));
+    out += line;
+  }
+  Storage.ensureDirectoryExists(kDir);
+  writeFileAtomic(kActivityPath, kActivityTmp, out.data(), out.size());
+}
+
+void noteActivity(const ActivityType type) {
+  if (time(nullptr) < 1700000000) return;  // no clock, no useful time
+  std::vector<ActivityRecord> records = loadActivities();
+  records.push_back({nowMs(), type});
+  if (records.size() > kMaxActivities) {
+    records.erase(records.begin(), records.end() - static_cast<std::ptrdiff_t>(kMaxActivities));
+  }
+  saveActivities(records);
+}
+
 // The window around today that the device keeps; its set hash goes into WREQ.
 std::vector<WeekEntry> windowOf(const Date today, const std::vector<WeekEntry>& index) {
   std::vector<WeekEntry> window;
@@ -307,6 +365,7 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.sleepDayHash = doc["sleepDayHash"] | 0u;
   state.lastSyncEpoch = doc["lastSync"] | static_cast<int64_t>(0);
   state.lastStatus = doc["lastStatus"] | 0;
+  state.firmware = doc["firmware"] | "";
   return true;
 }
 
@@ -344,6 +403,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["sleepDayHash"] = state.sleepDayHash;
   doc["lastSync"] = state.lastSyncEpoch;
   doc["lastStatus"] = state.lastStatus;
+  doc["firmware"] = state.firmware;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -384,19 +444,37 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   const uint16_t millivolts = batteryMillivolts();
   snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d\n", static_cast<unsigned long>(weekSetHash(window)),
            static_cast<unsigned>(millivolts), window.front().monday.c_str(), kWindowWeeks);
-  // Before the WREQ: the firmware version (the bridge notes an update when it
-  // changes), then readings of syncs that missed the bridge as XHIS lines.
+  // A new firmware since the last sync counts as installed now (an OTA
+  // reboots into the calendar soon after); the first sync only notes it.
+  if (state.firmware != CROSSPOINT_VERSION) {
+    if (!state.firmware.empty()) noteActivity(ActivityType::FirmwareInstalled);
+    state.firmware = CROSSPOINT_VERSION;
+    saveState(state);  // an aborted sync must not count the install twice
+  }
+  // Before the WREQ: events the device saw itself (XACT), then readings of
+  // syncs that missed the bridge (XHIS). An older bridge refuses the first
+  // line; both lists then stay for later.
+  std::vector<ActivityRecord> activities = loadActivities();
+  const std::vector<std::string> activityLines = activityHistoryLines(activities);
   std::vector<BatteryReading> history = loadHistory();
   const std::vector<std::string> historyLines = batteryHistoryLines(history);
-  std::vector<std::string> preamble;
-  preamble.reserve(historyLines.size() + 1);
-  preamble.push_back(std::string("XVER:") + CROSSPOINT_VERSION + "\n");
+  std::vector<std::string> preamble = activityLines;
   preamble.insert(preamble.end(), historyLines.begin(), historyLines.end());
   SyncResult r = syncWithBridge(line, shouldAbort, 5, 45000, &preamble);
-  const size_t historySent = r.preambleSent > 0 ? r.preambleSent - 1 : 0;
-  size_t delivered = 0;
-  for (size_t i = 0; i < historySent && i < historyLines.size(); ++i) {
-    delivered += static_cast<size_t>(std::count(historyLines[i].begin(), historyLines[i].end(), ';')) + 1;
+  const auto itemsIn = [](const std::vector<std::string>& lines, size_t count) {
+    size_t items = 0;
+    for (size_t i = 0; i < count && i < lines.size(); ++i) {
+      items += static_cast<size_t>(std::count(lines[i].begin(), lines[i].end(), ';')) + 1;
+    }
+    return items;
+  };
+  const size_t activityLinesSent = std::min(r.preambleSent, activityLines.size());
+  const size_t activitiesSent = itemsIn(activityLines, activityLinesSent);
+  const size_t delivered = itemsIn(historyLines, r.preambleSent - activityLinesSent);
+  if (activitiesSent > 0) {
+    activities.erase(activities.begin(),
+                     activities.begin() + static_cast<std::ptrdiff_t>(std::min(activitiesSent, activities.size())));
+    saveActivities(activities);
   }
   const bool keepReading = !r.requestSent && r.status != SyncStatus::Aborted;
   if (delivered > 0 || keepReading) {
@@ -409,6 +487,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     saveHistory(history);
   }
   takeTimezone(r.bridgeTz);
+  if (r.status == SyncStatus::BridgeNotFound) noteActivity(ActivityType::BridgeUnavailable);
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
     if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
@@ -442,6 +521,7 @@ void CalendarService::renderSleepScreen(GfxRenderer& renderer) const {
     view::drawSleepScreen(renderer, events, today, viewStatus(state));
     state.sleepDayHash = screenHash(events, today);
     saveState(state);
+    noteActivity(ActivityType::DisplayRefreshed);
   }
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
 }
@@ -465,6 +545,7 @@ bool CalendarService::backgroundRefresh(GfxRenderer& renderer, const AbortCheck 
   renderer.displayBuffer(HalDisplay::HALF_REFRESH);
   state.sleepDayHash = h;
   saveState(state);
+  noteActivity(ActivityType::DisplayRefreshed);
   LOG_INF("DSK", "Sleep screen redrawn");
   return true;
 }

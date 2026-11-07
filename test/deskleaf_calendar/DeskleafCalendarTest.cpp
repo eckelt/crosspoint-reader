@@ -302,6 +302,9 @@ static void testBatteryHistory() {
     items += static_cast<size_t>(std::count(l.begin(), l.end(), ';')) + 1;
   }
   CHECK(lines.size() > 1 && items == 40);
+  const auto acts = activityHistoryLines({{1794040705123LL, ActivityType::FirmwareInstalled},
+                                          {1794040800456LL, ActivityType::DisplayRefreshed}});
+  CHECK(acts.size() == 1 && acts[0] == "XACT:1794040705123:5;1794040800456:4\n");
 }
 
 int main() {

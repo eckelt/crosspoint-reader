@@ -20,6 +20,7 @@ struct CalendarState {
   uint32_t sleepDayHash = 0;   // what the sleep screen currently shows
   int64_t lastSyncEpoch = 0;   // last successful contact with the bridge
   uint8_t lastStatus = 0;      // SyncStatus of the last attempt
+  std::string firmware;        // firmware at the last sync; a change is an install
 };
 
 class CalendarService {

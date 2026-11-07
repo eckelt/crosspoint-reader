@@ -59,8 +59,10 @@ every week it covers, and the device merges the weeks it loads without
 duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
 `WeekSyncTests.swift`.
 
-Every sync first writes `XVER:<firmware version>`; the bridge records a
-firmware install for the X4 Pro when the version changes. Syncs that never
+The X4 Pro notes the events only it sees (sleep screen redrawn, bridge not
+found, a new firmware at the first sync after an update) in `activity.hist`
+and sends them first as `XACT:<epoch ms>:<type>;...` lines (types as the
+Deskleaf's ACT: 4 refresh, 5 firmware, 6 bridge not found). Syncs that never
 reach the bridge keep their battery reading in
 `battery.hist`; the next sync sends them first as
 `XHIS:<epoch>:<mV>;...` lines (each one BLE write), and the bridge files them

@@ -171,6 +171,16 @@ struct BatteryReading {
 };
 std::vector<std::string> batteryHistoryLines(const std::vector<BatteryReading>& readings, size_t maxLen = 240);
 
+// Events the X4 Pro saw itself (the bridge sees connections and calendar
+// outcomes live): sent as "XACT:<epoch ms>:<type>;...\n" lines like XHIS.
+// Types follow the Deskleaf's ACT protocol.
+enum class ActivityType : uint8_t { DisplayRefreshed = 4, FirmwareInstalled = 5, BridgeUnavailable = 6 };
+struct ActivityRecord {
+  int64_t epochMs;
+  ActivityType type;
+};
+std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>& records, size_t maxLen = 240);
+
 // --- Notes (Markdown from the Obsidian vault) ----------------------------
 // Line-based subset for the e-ink notes: headings, bullets, tasks and rules.
 // HTML comments are dropped; **bold**, `code` and links lose their markup

@@ -691,25 +691,46 @@ std::string plainNotes(const std::string& notes) {
 
 // --- Battery history -----------------------------------------------------------
 
-std::vector<std::string> batteryHistoryLines(const std::vector<BatteryReading>& readings, const size_t maxLen) {
+namespace {
+// Joins "a;b;c" after `prefix` into lines of at most maxLen bytes with "\n".
+std::vector<std::string> packLines(const char* prefix, const std::vector<std::string>& items, const size_t maxLen) {
   std::vector<std::string> lines;
   std::string line;
-  char item[32];
-  for (const BatteryReading& r : readings) {
-    const int n = std::snprintf(item, sizeof(item), "%lld:%u", static_cast<long long>(r.epoch),
-                                static_cast<unsigned>(r.millivolts));
-    if (n <= 0) continue;
-    // "XHIS:" + items joined by ';' + "\n" must stay within maxLen.
-    const size_t needed = (line.empty() ? 5 : line.size() + 1) + static_cast<size_t>(n) + 1;
+  const size_t prefixLen = std::strlen(prefix);
+  for (const std::string& item : items) {
+    const size_t needed = (line.empty() ? prefixLen : line.size() + 1) + item.size() + 1;
     if (!line.empty() && needed > maxLen) {
       lines.push_back(line + "\n");
       line.clear();
     }
-    line += line.empty() ? "XHIS:" : ";";
+    line += line.empty() ? prefix : ";";
     line += item;
   }
   if (!line.empty()) lines.push_back(line + "\n");
   return lines;
+}
+}  // namespace
+
+std::vector<std::string> batteryHistoryLines(const std::vector<BatteryReading>& readings, const size_t maxLen) {
+  std::vector<std::string> items;
+  items.reserve(readings.size());
+  char item[32];
+  for (const BatteryReading& r : readings) {
+    std::snprintf(item, sizeof(item), "%lld:%u", static_cast<long long>(r.epoch), static_cast<unsigned>(r.millivolts));
+    items.emplace_back(item);
+  }
+  return packLines("XHIS:", items, maxLen);
+}
+
+std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>& records, const size_t maxLen) {
+  std::vector<std::string> items;
+  items.reserve(records.size());
+  char item[32];
+  for (const ActivityRecord& r : records) {
+    std::snprintf(item, sizeof(item), "%lld:%u", static_cast<long long>(r.epochMs), static_cast<unsigned>(r.type));
+    items.emplace_back(item);
+  }
+  return packLines("XACT:", items, maxLen);
 }
 
 }  // namespace deskleaf
