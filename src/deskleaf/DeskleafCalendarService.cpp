@@ -322,8 +322,9 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   Date today{};
   if (!localToday(today)) {
     // The window is relative to today. Without a clock, a plain REQ fetches
-    // the bridge's TIME first; its payload is not used.
-    snprintf(line, sizeof(line), "REQ:00000000:%u\n", static_cast<unsigned>(batteryMillivolts()));
+    // the bridge's TIME first; its payload is not used. No battery field: the
+    // bridge would file it under the ESP32-C3 display's telemetry.
+    snprintf(line, sizeof(line), "REQ:00000000\n");
     SyncResult probe = syncWithBridge(line, shouldAbort);
     takeTimezone(probe.bridgeTz);
     freePayload(probe);
