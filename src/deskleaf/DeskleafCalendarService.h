@@ -16,7 +16,7 @@ class GfxRenderer;
 namespace deskleaf {
 
 struct CalendarState {
-  uint32_t payloadHash = 0;    // semantic hash of the stored payload (sent in REQ)
+  uint32_t payloadHash = 0;    // set hash of the stored week window (last WREQ)
   uint32_t sleepDayHash = 0;   // what the sleep screen currently shows
   int64_t lastSyncEpoch = 0;   // last successful contact with the bridge
   uint8_t lastStatus = 0;      // SyncStatus of the last attempt
@@ -24,16 +24,20 @@ struct CalendarState {
 
 class CalendarService {
  public:
-  // Loads the stored payload and state from SD. Cheap when nothing is stored.
-  bool load(std::vector<CalEvent>& events, CalendarState& state) const;
+  // Sync state from SD; false (and a default state) when none is stored.
+  bool loadState(CalendarState& state) const;
+  // Events of the stored weeks that overlap [first, last], in start order.
+  // A multi-day event appears once even when several of those weeks list it.
+  void loadRange(Date first, Date last, std::vector<CalEvent>& events) const;
   bool saveState(const CalendarState& state) const;
 
-  // One BLE round trip. On a new payload it is stored, `events` replaced and
-  // state.payloadHash updated. Blocks for up to ~50 s (scan + transfer).
-  // The bridge's timezone is adopted right away, or copied to bridgeTzOut
-  // (64 bytes) for a caller that must apply it on another task.
-  SyncStatus sync(std::vector<CalEvent>& events, CalendarState& state, bool* forceRedraw = nullptr,
-                  AbortCheck shouldAbort = nullptr, char* bridgeTzOut = nullptr) const;
+  // One WREQ round trip for the week window around today (DeskleafCalendar.h):
+  // changed weeks are stored, weeks outside the window removed. Reload with
+  // loadRange() afterwards. Blocks for the scan, the bridge's calendar fetch
+  // and the transfer. The bridge's timezone is adopted right away, or copied
+  // to bridgeTzOut (64 bytes) for a caller that applies it on another task.
+  SyncStatus sync(CalendarState& state, bool* forceRedraw = nullptr, AbortCheck shouldAbort = nullptr,
+                  char* bridgeTzOut = nullptr) const;
 
   // Sleep screen: draws today's view into the framebuffer and refreshes the panel.
   void renderSleepScreen(GfxRenderer& renderer) const;
@@ -53,9 +57,9 @@ class CalendarService {
 namespace bgsync {
 bool start(const CalendarState& from);  // false when one runs or the task cannot start
 bool running();                         // started and not yet collected or stopped
-// True once the worker has finished: moves its result out and releases it.
+// True once the worker has finished: hands out its state and releases it.
 // The bridge's timezone is adopted here, on the calling task.
-bool collect(std::vector<CalEvent>& events, CalendarState& state, SyncStatus& status);
+bool collect(CalendarState& state, SyncStatus& status);
 // Aborts a running sync, waits for the worker and drops its result.
 void stop();
 }  // namespace bgsync

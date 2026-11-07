@@ -123,6 +123,43 @@ const char* weekdayNameDe(int mon0);
 const char* weekdayShortDe(int mon0);
 const char* monthNameDe(int month);
 
+// "YYYY-MM-DD" -> Date; false when the text is no date.
+bool parseIsoDate(const std::string& iso, Date& out);
+
+// --- Week sync (WREQ) ----------------------------------------------------
+// The device keeps one file per week (Monday start) and asks the bridge with
+//   WREQ:<set hash hex8>:<battery mV>:<first Monday YYYY-MM-DD>:<weeks>\n
+// The bridge answers SAME, or a LEN body of frames
+//   W:<Monday YYYY-MM-DD>:<n>\n<n bytes JSON array>\n
+// one per changed week (n = 0: the week is empty now). An event is listed in
+// every week it covers. Hashes must match DeskleafCore/WeekSync.swift.
+constexpr int kWeeksBack = 13;   // ~3 months back
+constexpr int kWeeksAhead = 26;  // ~6 months ahead
+constexpr int kWindowWeeks = kWeeksBack + 1 + kWeeksAhead;
+
+Date mondayOf(Date d);
+// Semantic hash of one week's events; 0 for an empty (or missing) week.
+uint32_t weekHash(const std::vector<CalEvent>& events);
+// FNV-1a over "YYYY-MM-DD:HASH8\n" (upper-case hex) for each week, in order.
+struct WeekEntry {
+  std::string monday;
+  uint32_t hash;
+};
+uint32_t weekSetHash(const std::vector<WeekEntry>& weeks);
+
+struct WeekFrame {
+  std::string monday;
+  const char* json;  // points into the body; not NUL-terminated
+  size_t len;
+};
+// Splits a WREQ answer body into frames. False on malformed framing; frames
+// read before the error stay in `out`.
+bool parseWeekFrames(const char* body, size_t len, std::vector<WeekFrame>& out);
+
+// Appends events of `more` that `into` does not hold yet. Weeks repeat the
+// multi-day events they share, so merging loaded weeks needs this.
+void appendUnique(std::vector<CalEvent>& into, std::vector<CalEvent>& more);
+
 // --- Sleep-screen wake schedule ------------------------------------------
 
 // Minutes until the next background refresh, given local time `now`.

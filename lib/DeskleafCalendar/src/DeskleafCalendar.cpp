@@ -186,14 +186,6 @@ int CalEvent::endMinutes() const {
   return e;
 }
 
-namespace {
-bool parseIsoDate(const std::string& iso, Date& out) {
-  if (iso.size() < 10 || iso[4] != '-' || iso[7] != '-') return false;
-  out = {std::atoi(iso.substr(0, 4).c_str()), std::atoi(iso.substr(5, 2).c_str()), std::atoi(iso.substr(8, 2).c_str())};
-  return out.month >= 1 && out.month <= 12 && out.day >= 1 && out.day <= 31;
-}
-}  // namespace
-
 std::string CalEvent::lastDate() const {
   const std::string first = startDate();
   if (end.size() < 10) return first;
@@ -478,6 +470,78 @@ uint32_t nextWakeMinutes(const struct tm& now, uint32_t dayIntervalMin) {
   if (minuteOfDay < 7 * 60) return static_cast<uint32_t>(7 * 60 - minuteOfDay);
   if (minuteOfDay >= 19 * 60) return toMidnight5;
   return dayIntervalMin;
+}
+
+// --- Week sync -------------------------------------------------------------
+
+bool parseIsoDate(const std::string& iso, Date& out) {
+  if (iso.size() < 10 || iso[4] != '-' || iso[7] != '-') return false;
+  for (const int i : {0, 1, 2, 3, 5, 6, 8, 9}) {
+    if (iso[i] < '0' || iso[i] > '9') return false;
+  }
+  const Date d{std::atoi(iso.substr(0, 4).c_str()), std::atoi(iso.substr(5, 2).c_str()),
+               std::atoi(iso.substr(8, 2).c_str())};
+  if (d.month < 1 || d.month > 12 || d.day < 1 || d.day > daysInMonth(d.year, d.month)) return false;
+  out = d;
+  return true;
+}
+
+Date mondayOf(const Date d) { return addDays(d, -weekdayMon0(d)); }
+
+uint32_t weekHash(const std::vector<CalEvent>& events) {
+  return events.empty() ? 0u : semanticPayloadHash(events);
+}
+
+uint32_t weekSetHash(const std::vector<WeekEntry>& weeks) {
+  uint32_t h = 2166136261u;
+  char line[32];
+  for (const WeekEntry& w : weeks) {
+    const int n = std::snprintf(line, sizeof(line), "%s:%08lX\n", w.monday.c_str(),
+                                static_cast<unsigned long>(w.hash));
+    if (n > 0) h = fnv1a(reinterpret_cast<const uint8_t*>(line), static_cast<size_t>(n), h);
+  }
+  return h;
+}
+
+bool parseWeekFrames(const char* body, const size_t len, std::vector<WeekFrame>& out) {
+  size_t pos = 0;
+  while (pos < len) {
+    // "W:YYYY-MM-DD:<n>\n"
+    if (len - pos < 15 || body[pos] != 'W' || body[pos + 1] != ':' || body[pos + 12] != ':') return false;
+    const std::string monday(body + pos + 2, 10);
+    Date d{};
+    if (!parseIsoDate(monday, d)) return false;
+    size_t p = pos + 13;
+    size_t n = 0;
+    bool digits = false;
+    while (p < len && body[p] >= '0' && body[p] <= '9') {
+      n = n * 10 + static_cast<size_t>(body[p] - '0');
+      if (n > len) return false;
+      digits = true;
+      ++p;
+    }
+    if (!digits || p >= len || body[p] != '\n') return false;
+    ++p;
+    if (n > len - p) return false;
+    out.push_back({monday, body + p, n});
+    p += n;
+    if (p < len && body[p] == '\n') ++p;  // separator after the JSON
+    pos = p;
+  }
+  return true;
+}
+
+void appendUnique(std::vector<CalEvent>& into, std::vector<CalEvent>& more) {
+  const size_t existing = into.size();
+  for (CalEvent& e : more) {
+    bool seen = false;
+    for (size_t i = 0; i < existing && !seen; ++i) {
+      const CalEvent& o = into[i];
+      seen = o.start == e.start && o.end == e.end && o.subject == e.subject && o.calendar == e.calendar;
+    }
+    if (!seen) into.push_back(std::move(e));
+  }
+  more.clear();
 }
 
 }  // namespace deskleaf

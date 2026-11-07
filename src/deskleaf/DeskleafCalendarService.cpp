@@ -32,10 +32,13 @@ const CalendarService CALENDAR;
 namespace {
 
 constexpr const char* kDir = "/.crosspoint/deskleaf";
-constexpr const char* kPayloadPath = "/.crosspoint/deskleaf/calendar.json";
-constexpr const char* kPayloadTmp = "/.crosspoint/deskleaf/calendar.json.tmp";
+constexpr const char* kWeeksDir = "/.crosspoint/deskleaf/weeks";
+constexpr const char* kIndexPath = "/.crosspoint/deskleaf/weeks.idx";
+constexpr const char* kIndexTmp = "/.crosspoint/deskleaf/weeks.idx.tmp";
+// Single payload of builds before the week sync; removed after the first one.
+constexpr const char* kLegacyPayloadPath = "/.crosspoint/deskleaf/calendar.json";
 constexpr const char* kStatePath = "/.crosspoint/deskleaf/state.json";
-constexpr size_t kMaxPayload = 200000;
+constexpr size_t kMaxFile = 512 * 1024;  // one week, or the state
 // First refresh after the reader goes to sleep; later ones follow the schedule.
 constexpr uint32_t kFirstWakeMinutes = 2;
 
@@ -49,7 +52,7 @@ PsBuffer readFile(const char* path, size_t& len) {
   HalFile f;
   if (!Storage.openFileForRead("DSK", path, f)) return PsBuffer();
   const size_t size = f.fileSize();
-  if (size == 0 || size > kMaxPayload) return PsBuffer();
+  if (size == 0 || size > kMaxFile) return PsBuffer();
   // Payload lives in PSRAM; the internal heap stays free for the reader.
   auto* buf = static_cast<char*>(heap_caps_malloc(size + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (!buf) buf = static_cast<char*>(malloc(size + 1));
@@ -65,17 +68,130 @@ PsBuffer readFile(const char* path, size_t& len) {
   return PsBuffer(buf);
 }
 
-bool writePayload(const char* data, size_t len) {
-  Storage.ensureDirectoryExists(kDir);
+bool writeFileAtomic(const char* path, const char* tmp, const char* data, size_t len) {
   HalFile f;
-  if (!Storage.openFileForWrite("DSK", kPayloadTmp, f)) return false;
+  if (!Storage.openFileForWrite("DSK", tmp, f)) return false;
   const size_t written = f.write(data, len);
   f.close();
   if (written != len) {
-    Storage.remove(kPayloadTmp);
+    Storage.remove(tmp);
     return false;
   }
-  return Storage.replaceFile(kPayloadTmp, kPayloadPath);
+  return Storage.replaceFile(tmp, path);
+}
+
+std::string weekPath(const std::string& monday) { return std::string(kWeeksDir) + "/" + monday + ".json"; }
+
+// weeks.idx: one "YYYY-MM-DD HASH8" line per stored, non-empty week.
+std::vector<WeekEntry> loadIndex() {
+  std::vector<WeekEntry> index;
+  size_t len = 0;
+  PsBuffer buf = readFile(kIndexPath, len);
+  if (!buf) return index;
+  const char* p = buf.get();
+  const char* end = p + len;
+  while (p < end) {
+    const char* nl = static_cast<const char*>(memchr(p, '\n', static_cast<size_t>(end - p)));
+    const char* lineEnd = nl ? nl : end;
+    if (lineEnd - p >= 19 && p[10] == ' ') {
+      Date d{};
+      const std::string monday(p, 10);
+      if (parseIsoDate(monday, d)) {
+        index.push_back({monday, static_cast<uint32_t>(strtoul(std::string(p + 11, 8).c_str(), nullptr, 16))});
+      }
+    }
+    p = nl ? nl + 1 : end;
+  }
+  return index;
+}
+
+bool saveIndex(const std::vector<WeekEntry>& index) {
+  std::string out;
+  out.reserve(index.size() * 20);
+  char line[32];
+  for (const WeekEntry& w : index) {
+    if (w.hash == 0) continue;
+    snprintf(line, sizeof(line), "%s %08lX\n", w.monday.c_str(), static_cast<unsigned long>(w.hash));
+    out += line;
+  }
+  return writeFileAtomic(kIndexPath, kIndexTmp, out.data(), out.size());
+}
+
+uint32_t indexHash(const std::vector<WeekEntry>& index, const std::string& monday) {
+  for (const WeekEntry& w : index) {
+    if (w.monday == monday) return w.hash;
+  }
+  return 0;
+}
+
+void setIndexHash(std::vector<WeekEntry>& index, const std::string& monday, uint32_t hash) {
+  for (WeekEntry& w : index) {
+    if (w.monday == monday) {
+      w.hash = hash;
+      return;
+    }
+  }
+  index.push_back({monday, hash});
+}
+
+// The window around today that the device keeps; its set hash goes into WREQ.
+std::vector<WeekEntry> windowOf(const Date today, const std::vector<WeekEntry>& index) {
+  std::vector<WeekEntry> window;
+  window.reserve(kWindowWeeks);
+  const Date first = addDays(mondayOf(today), -7 * kWeeksBack);
+  for (int i = 0; i < kWindowWeeks; ++i) {
+    const std::string monday = isoString(addDays(first, 7 * i));
+    window.push_back({monday, indexHash(index, monday)});
+  }
+  return window;
+}
+
+// Stores the frames of a WREQ answer and drops weeks outside the window.
+// False when a frame or a file write failed; the stored weeks then no longer
+// match the set hash, so the bridge resends everything next time.
+bool applyWeekFrames(const char* body, size_t len, const std::vector<WeekEntry>& window,
+                     std::vector<WeekEntry>& index) {
+  std::vector<WeekFrame> frames;
+  bool ok = parseWeekFrames(body, len, frames);
+  if (!ok) LOG_ERR("DSK", "Malformed week frames after %u frames", static_cast<unsigned>(frames.size()));
+  Storage.ensureDirectoryExists(kWeeksDir);
+  for (const WeekFrame& frame : frames) {
+    const std::string path = weekPath(frame.monday);
+    if (frame.len == 0) {
+      Storage.remove(path.c_str());
+      setIndexHash(index, frame.monday, 0);
+      continue;
+    }
+    std::vector<CalEvent> events;
+    if (!parsePayload(frame.json, frame.len, events)) {
+      LOG_ERR("DSK", "Week %s does not parse", frame.monday.c_str());
+      ok = false;
+      continue;
+    }
+    const std::string tmp = path + ".tmp";
+    if (!writeFileAtomic(path.c_str(), tmp.c_str(), frame.json, frame.len)) {
+      LOG_ERR("DSK", "Could not store week %s", frame.monday.c_str());
+      setIndexHash(index, frame.monday, 0);
+      ok = false;
+      continue;
+    }
+    setIndexHash(index, frame.monday, weekHash(events));
+  }
+  // Weeks that left the window: their files go, so the card does not fill up.
+  const auto inWindow = [&](const std::string& monday) {
+    for (const WeekEntry& w : window) {
+      if (w.monday == monday) return true;
+    }
+    return false;
+  };
+  for (WeekEntry& w : index) {
+    if (w.hash != 0 && !inWindow(w.monday)) {
+      Storage.remove(weekPath(w.monday).c_str());
+      w.hash = 0;
+    }
+  }
+  if (!saveIndex(index)) ok = false;
+  return ok;
 }
 
 // The device clock keeps UTC until a zone is picked in Settings. While none
@@ -132,27 +248,38 @@ bool localToday(Date& out, struct tm* tmOut) {
   return true;
 }
 
-bool CalendarService::load(std::vector<CalEvent>& events, CalendarState& state) const {
+bool CalendarService::loadState(CalendarState& state) const {
   state = CalendarState{};
   size_t len = 0;
-  if (PsBuffer st = readFile(kStatePath, len)) {
-    JsonDocument doc;
-    if (!deserializeJson(doc, st.get(), len)) {
-      state.payloadHash = doc["payloadHash"] | 0u;
-      state.sleepDayHash = doc["sleepDayHash"] | 0u;
-      state.lastSyncEpoch = doc["lastSync"] | static_cast<int64_t>(0);
-      state.lastStatus = doc["lastStatus"] | 0;
-    }
-  }
-  events.clear();
-  PsBuffer payload = readFile(kPayloadPath, len);
-  if (!payload) return false;
-  if (!parsePayload(payload.get(), len, events)) {
-    LOG_ERR("DSK", "Stored payload does not parse");
-    state.payloadHash = 0;  // ask the bridge for a fresh copy
-    return false;
-  }
+  PsBuffer st = readFile(kStatePath, len);
+  if (!st) return false;
+  JsonDocument doc;
+  if (deserializeJson(doc, st.get(), len)) return false;
+  state.payloadHash = doc["payloadHash"] | 0u;
+  state.sleepDayHash = doc["sleepDayHash"] | 0u;
+  state.lastSyncEpoch = doc["lastSync"] | static_cast<int64_t>(0);
+  state.lastStatus = doc["lastStatus"] | 0;
   return true;
+}
+
+void CalendarService::loadRange(const Date first, const Date last, std::vector<CalEvent>& events) const {
+  events.clear();
+  const std::vector<WeekEntry> index = loadIndex();
+  const Date lastMonday = mondayOf(last);
+  for (Date monday = mondayOf(first); isoString(monday) <= isoString(lastMonday); monday = addDays(monday, 7)) {
+    const std::string key = isoString(monday);
+    if (indexHash(index, key) == 0) continue;
+    size_t len = 0;
+    PsBuffer buf = readFile(weekPath(key).c_str(), len);
+    std::vector<CalEvent> week;
+    if (!buf || !parsePayload(buf.get(), len, week)) {
+      LOG_ERR("DSK", "Stored week %s unreadable", key.c_str());
+      continue;
+    }
+    appendUnique(events, week);
+  }
+  std::stable_sort(events.begin(), events.end(),
+                   [](const CalEvent& a, const CalEvent& b) { return a.start < b.start; });
 }
 
 bool CalendarService::saveState(const CalendarState& state) const {
@@ -167,34 +294,49 @@ bool CalendarService::saveState(const CalendarState& state) const {
   return Storage.writeFile(kStatePath, out);
 }
 
-SyncStatus CalendarService::sync(std::vector<CalEvent>& events, CalendarState& state, bool* forceRedraw,
-                                 AbortCheck shouldAbort, char* bridgeTzOut) const {
-  SyncResult r = syncWithBridge(state.payloadHash, batteryMillivolts(), shouldAbort);
-  if (bridgeTzOut) {
-    std::strncpy(bridgeTzOut, r.bridgeTz, sizeof(r.bridgeTz) - 1);
-    bridgeTzOut[sizeof(r.bridgeTz) - 1] = '\0';
-  } else {
-    adoptBridgeTimezone(r.bridgeTz);
+SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortCheck shouldAbort,
+                                 char* bridgeTzOut) const {
+  const auto takeTimezone = [&](const char* tz) {
+    if (!bridgeTzOut) {
+      adoptBridgeTimezone(tz);
+      return;
+    }
+    std::strncpy(bridgeTzOut, tz, 63);
+    bridgeTzOut[63] = '\0';
+  };
+  char line[64];
+  Date today{};
+  if (!localToday(today)) {
+    // The window is relative to today. Without a clock, a plain REQ fetches
+    // the bridge's TIME first; its payload is not used.
+    snprintf(line, sizeof(line), "REQ:00000000:%u\n", static_cast<unsigned>(batteryMillivolts()));
+    SyncResult probe = syncWithBridge(line, shouldAbort);
+    takeTimezone(probe.bridgeTz);
+    freePayload(probe);
+    if (probe.status == SyncStatus::Aborted) return probe.status;
+    if (!localToday(today)) {
+      state.lastStatus = static_cast<uint8_t>(probe.status);
+      saveState(state);
+      return probe.status;
+    }
   }
+
+  std::vector<WeekEntry> index = loadIndex();
+  const std::vector<WeekEntry> window = windowOf(today, index);
+  snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d\n", static_cast<unsigned long>(weekSetHash(window)),
+           static_cast<unsigned>(batteryMillivolts()), window.front().monday.c_str(), kWindowWeeks);
+  SyncResult r = syncWithBridge(line, shouldAbort);
+  takeTimezone(r.bridgeTz);
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
-    std::vector<CalEvent> fresh;
-    if (parsePayload(r.payload, r.payloadLen, fresh)) {
-      events.swap(fresh);
-      if (writePayload(r.payload, r.payloadLen)) {
-        state.payloadHash = semanticPayloadHash(events);
-      } else {
-        // Shown now; the old hash makes the bridge resend it next time.
-        LOG_ERR("DSK", "Could not store payload");
-      }
-    } else {
-      LOG_ERR("DSK", "Received payload does not parse");
-      r.status = SyncStatus::Timeout;
-    }
+    if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
+    Storage.remove(kLegacyPayloadPath);
+    LOG_INF("DSK", "Stored week frames, %u bytes", static_cast<unsigned>(r.payloadLen));
   }
   if (r.status == SyncStatus::NewPayload || r.status == SyncStatus::Unchanged) {
     state.lastSyncEpoch = static_cast<int64_t>(time(nullptr));
   }
+  state.payloadHash = weekSetHash(windowOf(today, index));
   state.lastStatus = static_cast<uint8_t>(r.status);
   freePayload(r);
   if (r.status != SyncStatus::Aborted) saveState(state);
@@ -204,13 +346,15 @@ SyncStatus CalendarService::sync(std::vector<CalEvent>& events, CalendarState& s
 void CalendarService::renderSleepScreen(GfxRenderer& renderer) const {
   std::vector<CalEvent> events;
   CalendarState state;
-  load(events, state);
+  loadState(state);
   Date today{};
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
   if (!localToday(today)) {
     renderer.clearScreen();
     renderer.drawCenteredText(UI_10_FONT_ID, renderer.getScreenHeight() / 2, "Kalender: Uhrzeit noch nicht gesetzt");
   } else {
+    // The week of today holds every event of today and of the weekend pair.
+    loadRange(today, today, events);
     view::drawSleepScreen(renderer, events, today, viewStatus(state));
     state.sleepDayHash = screenHash(events, today);
     saveState(state);
@@ -219,13 +363,14 @@ void CalendarService::renderSleepScreen(GfxRenderer& renderer) const {
 }
 
 bool CalendarService::backgroundRefresh(GfxRenderer& renderer, const AbortCheck shouldAbort) const {
-  std::vector<CalEvent> events;
   CalendarState state;
-  load(events, state);
+  loadState(state);
   bool force = false;
-  if (sync(events, state, &force, shouldAbort) == SyncStatus::Aborted) return false;
+  if (sync(state, &force, shouldAbort) == SyncStatus::Aborted) return false;
   Date today{};
   if (!localToday(today)) return true;
+  std::vector<CalEvent> events;
+  loadRange(today, today, events);
   const uint32_t h = screenHash(events, today);
   if (!force && h == state.sleepDayHash) {
     LOG_INF("DSK", "Sleep screen unchanged");
@@ -252,13 +397,12 @@ void CalendarService::armWakeTimer(const bool firstAfterSleep) const {
 namespace bgsync {
 namespace {
 // NimBLE client calls block on semaphores while the host task does the work;
-// the payload JSON lives on the heap. 8 KB is unmeasured: the worker logs its
+// the body sits in PSRAM and each week's JSON document on the heap. 8 KB is unmeasured: the worker logs its
 // stack high-water mark after every sync.
 constexpr uint32_t kStackBytes = 8192;
 
 // Owned by the worker between start() and `done`; by the loop task otherwise.
 struct Job {
-  std::vector<CalEvent> events;
   CalendarState state;
   SyncStatus status = SyncStatus::Unchanged;
   char bridgeTz[64] = "";
@@ -269,7 +413,7 @@ std::atomic<bool> abortFlag{false};
 
 void worker(void* param) {
   auto* j = static_cast<Job*>(param);
-  j->status = CALENDAR.sync(j->events, j->state, nullptr, [] { return abortFlag.load(); }, j->bridgeTz);
+  j->status = CALENDAR.sync(j->state, nullptr, [] { return abortFlag.load(); }, j->bridgeTz);
   LOG_DBG("DSK", "Sync task stack free: %u bytes", static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   done = true;  // the worker touches nothing after this
   vTaskDelete(nullptr);
@@ -301,9 +445,8 @@ bool start(const CalendarState& from) {
 
 bool running() { return job != nullptr; }
 
-bool collect(std::vector<CalEvent>& events, CalendarState& state, SyncStatus& status) {
+bool collect(CalendarState& state, SyncStatus& status) {
   if (!job || !done) return false;
-  events.swap(job->events);
   state = job->state;
   status = job->status;
   adoptBridgeTimezone(job->bridgeTz);

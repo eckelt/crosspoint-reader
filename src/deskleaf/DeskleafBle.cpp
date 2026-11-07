@@ -26,7 +26,8 @@ namespace {
 constexpr const char* kServiceUuid = "7e20c560-55dd-4c7a-9c61-8f6ea7d7c301";
 constexpr const char* kCharUuid = "9c5a5dd9-3c40-4e58-9d0a-95bf7cb9d302";
 constexpr const char* kPeripheralName = "Deskleaf";
-constexpr size_t kMaxPayload = 200000;
+// A first week sync carries ~9 months of events; the body goes to PSRAM.
+constexpr size_t kMaxPayload = 2 * 1024 * 1024;
 constexpr uint32_t kChunkTimeoutMs = 20000;
 
 // Receive state, shared between the NimBLE host task (notify) and the caller.
@@ -49,7 +50,7 @@ struct Rx {
 Rx rx;
 
 char* allocPayload(size_t n) {
-  // The X4 Pro has 8 MB PSRAM; a full 10-day payload is tens of KB.
+  // The X4 Pro has 8 MB PSRAM; a full week window is a few hundred KB.
   void* p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!p) p = malloc(n);
   return static_cast<char*>(p);
@@ -149,7 +150,7 @@ void resetRx() {
   rx.lastChunkMs = millis();
 }
 
-SyncStatus connectAndRequest(NimBLEClient*& client, uint32_t knownHash, uint16_t batteryMv, AbortCheck shouldAbort,
+SyncStatus connectAndRequest(NimBLEClient*& client, const char* requestLine, AbortCheck shouldAbort,
                              uint8_t scanSeconds) {
   NimBLEScan* scan = NimBLEDevice::getScan();
   scan->setActiveScan(true);
@@ -187,18 +188,15 @@ SyncStatus connectAndRequest(NimBLEClient*& client, uint32_t knownHash, uint16_t
   NimBLERemoteCharacteristic* chr = svc ? svc->getCharacteristic(kCharUuid) : nullptr;
   if (!chr || !chr->canNotify() || !chr->subscribe(true, onNotify)) return SyncStatus::ConnectFailed;
 
-  char request[32];
-  snprintf(request, sizeof(request), "REQ:%08lX:%u\n", static_cast<unsigned long>(knownHash),
-           static_cast<unsigned>(batteryMv));
-  if (!chr->writeValue(std::string(request), true)) return SyncStatus::ConnectFailed;
-  LOG_INF("DSK", "REQ sent (hash %08lX, %u mV)", static_cast<unsigned long>(knownHash), batteryMv);
+  if (!chr->writeValue(std::string(requestLine), true)) return SyncStatus::ConnectFailed;
+  LOG_INF("DSK", "Sent %s", requestLine);
   return SyncStatus::NewPayload;  // "request sent"; the caller waits for the answer
 }
 
 }  // namespace
 
-SyncResult syncWithBridge(const uint32_t knownPayloadHash, const uint16_t batteryMv, const AbortCheck shouldAbort,
-                          const uint8_t scanSeconds, const uint32_t timeoutMs) {
+SyncResult syncWithBridge(const char* requestLine, const AbortCheck shouldAbort, const uint8_t scanSeconds,
+                          const uint32_t timeoutMs) {
   SyncResult result;
   if (!rx.mutex) rx.mutex = xSemaphoreCreateMutex();
   if (!rx.mutex) {
@@ -216,11 +214,13 @@ SyncResult syncWithBridge(const uint32_t knownPayloadHash, const uint16_t batter
   }
 
   NimBLEClient* client = nullptr;
-  SyncStatus status = connectAndRequest(client, knownPayloadHash, batteryMv, shouldAbort, scanSeconds);
+  SyncStatus status = connectAndRequest(client, requestLine, shouldAbort, scanSeconds);
   if (status == SyncStatus::NewPayload) {
     const uint32_t start = millis();
     status = SyncStatus::Timeout;
-    while (millis() - start < timeoutMs) {
+    // timeoutMs bounds the wait for an answer; a running transfer may take
+    // longer and only stops when chunks stop arriving.
+    while (rx.active || millis() - start < timeoutMs) {
       if (rx.done) break;
       if (!rx.connected) break;
       if (millis() - rx.lastChunkMs > kChunkTimeoutMs) break;

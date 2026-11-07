@@ -29,6 +29,10 @@ class CalendarActivity final : public Activity {
   void cycleView();
   void startSync();
   void finishSync();
+  // Events are loaded per view: the cursor's week, or the weeks of its month.
+  void rangeFor(deskleaf::Date& first, deskleaf::Date& last) const;
+  void ensureLoaded(bool force);
+  void show();  // ensureLoaded + requestUpdate after a view or cursor change
   int contentTop() const;
 
   std::vector<deskleaf::CalEvent> events;
@@ -37,6 +41,9 @@ class CalendarActivity final : public Activity {
   deskleaf::Date today{2026, 1, 1};
   deskleaf::Date cursor{2026, 1, 1};  // shown day; week and month derive from it
   bool clockValid = false;
+  bool loadedValid = false;
+  deskleaf::Date loadedFirst{2026, 1, 1};
+  deskleaf::Date loadedLast{2026, 1, 1};
   bool syncing = false;
   bool syncPending = false;
 

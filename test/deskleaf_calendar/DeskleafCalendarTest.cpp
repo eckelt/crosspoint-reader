@@ -215,8 +215,56 @@ static void testWake() {
   CHECK(nextWakeMinutes(t) == 665);
 }
 
+static void testWeekSync() {
+  Date d{};
+  CHECK(parseIsoDate("2026-11-07", d) && d.year == 2026 && d.month == 11 && d.day == 7);
+  CHECK(!parseIsoDate("2026-13-01", d) && !parseIsoDate("2026-11-x7", d) && !parseIsoDate("2026-02-30", d));
+  CHECK(isoString(mondayOf({2026, 11, 7})) == "2026-11-02");
+  CHECK(isoString(mondayOf({2026, 11, 2})) == "2026-11-02");
+  CHECK(isoString(mondayOf({2027, 1, 3})) == "2026-12-28");
+
+  CHECK(weekHash({}) == 0);
+  // Contract vector shared with WeekSyncTests.swift.
+  const std::vector<WeekEntry> set = {{"2026-11-02", 0x1234ABCDu}, {"2026-11-09", 0}};
+  CHECK(weekSetHash(set) == 0x07FCC1C0u);
+  CHECK(weekSetHash(set) != weekSetHash({{"2026-11-02", 0x1234ABCDu}}));
+  CHECK(weekSetHash({}) == 2166136261u);
+
+  const std::string body =
+      "W:2026-11-02:2\n[]\n"
+      "W:2026-11-09:0\n\n"
+      "W:2026-11-16:61\n[{\"start\":\"2026-11-17T09:00:00\",\"end\":\"2026-11-17T10:00:00\"}]\n";
+  std::vector<WeekFrame> frames;
+  CHECK(parseWeekFrames(body.data(), body.size(), frames) && frames.size() == 3);
+  CHECK(frames.size() == 3 && frames[0].monday == "2026-11-02" && frames[0].len == 2 &&
+        std::string(frames[0].json, frames[0].len) == "[]");
+  CHECK(frames.size() == 3 && frames[1].len == 0);
+  if (frames.size() == 3) {
+    std::vector<CalEvent> week;
+    CHECK(parsePayload(frames[2].json, frames[2].len, week) && week.size() == 1);
+  }
+  frames.clear();
+  const std::string truncated = "W:2026-11-02:99\n[]";
+  CHECK(!parseWeekFrames(truncated.data(), truncated.size(), frames));
+  const std::string garbage = "LEN:3\nabc";
+  CHECK(!parseWeekFrames(garbage.data(), garbage.size(), frames));
+
+  // A multi-day event repeats in both weeks; merging keeps one.
+  CalEvent trip;
+  trip.start = "2026-11-06T09:00:00";
+  trip.end = "2026-11-10T17:00:00";
+  trip.subject = "Vorwerk";
+  CalEvent other = trip;
+  other.subject = "Anderes";
+  std::vector<CalEvent> merged = {trip};
+  std::vector<CalEvent> next = {trip, other};
+  appendUnique(merged, next);
+  CHECK(merged.size() == 2 && next.empty());
+}
+
 int main() {
   testHashContract();
+  testWeekSync();
   testDaySelection();
   testMultiDay();
   testPlatforms();

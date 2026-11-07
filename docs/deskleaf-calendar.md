@@ -41,15 +41,29 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
 
 ## Bridge protocol
 
-Unchanged `calendar.payload.v1` over BLE: the device sends
-`REQ:<semantic hash>:<battery mV>`, the bridge answers `TIME`, `TZ` and either
-`SAME` or `LEN[F]:<n>` plus the JSON. The semantic hash matches the bridge's
-`einkalSemanticHash` (contract vectors in `test/deskleaf_calendar`). While no
-timezone was ever chosen in Settings (the clock keeps UTC), the first sync
-adopts the bridge's `TZ` and saves it; a zone picked by the user always wins. The Deskleaf
-firmware OTA and battery-history messages are not used.
+The device keeps a window of 40 weeks (13 back, the current one, 26 ahead)
+as one file per week, and asks with
+`WREQ:<set hash>:<battery mV>:<first Monday>:<weeks>`. The set hash is FNV-1a
+over `YYYY-MM-DD:HASH8\n` per week of the window; a week's hash is the
+semantic hash of its events (`einkalSemanticHash`), 0 when it is empty. The
+bridge (deskleaf-display, `swift/Sources/DeskleafCore/WeekSync.swift`) answers
+`TIME`, `TZ` and either `SAME` or `LEN[F]:<n>` with frames
+`W:<Monday>:<n>\n<JSON array>\n` for the weeks that changed (`n` = 0: empty
+now). It remembers what it delivered: when the device's set hash matches,
+only changed weeks are sent; otherwise all of them. An event is listed in
+every week it covers, and the device merges the weeks it loads without
+duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
+`WeekSyncTests.swift`.
 
-Files: payload and state in `/.crosspoint/deskleaf/` on the SD card.
+The ESP32-C3 Deskleaf keeps its `REQ` payload. Without a set clock the X4 Pro
+sends one `REQ` first to get `TIME`, then the `WREQ`. While no timezone was
+ever chosen in Settings (the clock keeps UTC), the first sync adopts the
+bridge's `TZ` and saves it; a zone picked by the user always wins. The
+Deskleaf firmware OTA and battery-history messages are not used.
+
+Files in `/.crosspoint/deskleaf/` on the SD card: `weeks/<Monday>.json`,
+`weeks.idx` (Monday and hash per stored week) and `state.json`. The calendar
+app loads only the weeks its view shows; the sleep screen loads today's week.
 
 ## Updates
 

@@ -25,9 +25,10 @@ constexpr unsigned long kSyncLongPressMs = 800;
 
 void CalendarActivity::onEnter() {
   Activity::onEnter();
-  deskleaf::CALENDAR.load(events, state);
+  deskleaf::CALENDAR.loadState(state);
   clockValid = deskleaf::localToday(today);
   cursor = today;
+  ensureLoaded(true);
   const int64_t now = static_cast<int64_t>(time(nullptr));
   syncPending = !clockValid || state.lastSyncEpoch == 0 || now - state.lastSyncEpoch > kAutoSyncAgeSeconds;
   requestUpdate();
@@ -49,35 +50,64 @@ void CalendarActivity::startSync() {
 }
 
 void CalendarActivity::finishSync() {
-  std::vector<deskleaf::CalEvent> incoming;
   deskleaf::CalendarState newState;
   auto status = deskleaf::SyncStatus::Unchanged;
-  if (!deskleaf::bgsync::collect(incoming, newState, status)) return;
+  if (!deskleaf::bgsync::collect(newState, status)) return;
   {
     RenderLock lock;
-    if (status == deskleaf::SyncStatus::NewPayload) {
-      // Keep an opened event open if it is still there; indices change.
-      int reopened = -1;
-      if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
-        const auto& open = events[detailIndex];
-        for (size_t i = 0; i < incoming.size(); ++i) {
-          if (incoming[i].subject == open.subject && incoming[i].start == open.start) {
-            reopened = static_cast<int>(i);
-            break;
-          }
-        }
-      }
-      events.swap(incoming);
-      hits.clear();
-      detailIndex = reopened;
-      if (view == View::Detail && reopened < 0) view = View::Day;
-    }
     state = newState;
   }
   syncing = false;
   const bool hadClock = clockValid;
   clockValid = deskleaf::localToday(today);
   if (!hadClock && clockValid) cursor = today;
+  // StoreFailed may still have stored some weeks.
+  const bool weeksChanged =
+      status == deskleaf::SyncStatus::NewPayload || status == deskleaf::SyncStatus::StoreFailed;
+  ensureLoaded(weeksChanged || !hadClock);
+  requestUpdate();
+}
+
+void CalendarActivity::rangeFor(deskleaf::Date& first, deskleaf::Date& last) const {
+  if (view == View::Month) {
+    first = {cursor.year, cursor.month, 1};
+    last = {cursor.year, cursor.month, deskleaf::daysInMonth(cursor.year, cursor.month)};
+    return;
+  }
+  first = deskleaf::mondayOf(cursor);  // day, weekend, week and detail: the cursor's week
+  last = deskleaf::addDays(first, 6);
+}
+
+void CalendarActivity::ensureLoaded(const bool force) {
+  deskleaf::Date first{};
+  deskleaf::Date last{};
+  rangeFor(first, last);
+  if (!force && loadedValid && deskleaf::sameDate(first, loadedFirst) && deskleaf::sameDate(last, loadedLast)) return;
+  std::vector<deskleaf::CalEvent> incoming;
+  deskleaf::CALENDAR.loadRange(first, last, incoming);
+  RenderLock lock;
+  // Keep an opened event open if it is still there; indices change.
+  int reopened = -1;
+  if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+    const auto& open = events[detailIndex];
+    for (size_t i = 0; i < incoming.size(); ++i) {
+      if (incoming[i].subject == open.subject && incoming[i].start == open.start) {
+        reopened = static_cast<int>(i);
+        break;
+      }
+    }
+  }
+  events.swap(incoming);
+  hits.clear();
+  detailIndex = reopened;
+  if (view == View::Detail && reopened < 0) view = View::Day;
+  loadedFirst = first;
+  loadedLast = last;
+  loadedValid = true;
+}
+
+void CalendarActivity::show() {
+  ensureLoaded(false);
   requestUpdate();
 }
 
@@ -111,13 +141,13 @@ void CalendarActivity::step(const int direction) {
       break;
     }
   }
-  requestUpdate();
+  show();
 }
 
 void CalendarActivity::cycleView() {
   view = view == View::Day ? View::Week : view == View::Week ? View::Month : View::Day;
   detailIndex = -1;
-  requestUpdate();
+  show();
 }
 
 int CalendarActivity::contentTop() const { return headerHeight; }
@@ -138,7 +168,7 @@ void CalendarActivity::loop() {
         mappedInput.wasReleased(Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
       view = View::Day;
       detailIndex = -1;
-      requestUpdate();
+      show();
     }
     return;
   }
@@ -206,7 +236,7 @@ void CalendarActivity::loop() {
     if (onToday) {
       cycleView();
     } else {
-      requestUpdate();
+      show();
     }
     return;
   }
@@ -224,7 +254,7 @@ void CalendarActivity::loop() {
     if (picked >= 0) {
       detailIndex = picked;
       view = View::Detail;
-      requestUpdate();
+      show();
     }
   } else if (view == View::Month) {
     // Same grid geometry as view::drawMonth.
@@ -243,7 +273,7 @@ void CalendarActivity::loop() {
       if (d.month == cursor.month) {
         cursor = d;
         view = View::Day;
-        requestUpdate();
+        show();
       }
     }
   } else if (view == View::Week) {
@@ -253,7 +283,7 @@ void CalendarActivity::loop() {
     if (row >= 0 && row < 7) {
       cursor = deskleaf::addDays(cursor, row - deskleaf::weekdayMon0(cursor));
       view = View::Day;
-      requestUpdate();
+      show();
     }
   }
 }
