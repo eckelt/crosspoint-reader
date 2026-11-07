@@ -223,7 +223,8 @@ static void testWeekSync() {
   CHECK(isoString(mondayOf({2026, 11, 2})) == "2026-11-02");
   CHECK(isoString(mondayOf({2027, 1, 3})) == "2026-12-28");
 
-  CHECK(weekHash({}) == 0);
+  CHECK(weekHash("", 0) == 0);
+  CHECK(weekHash("[]", 2) == 0x741638A5u);  // same vector in WeekSyncTests.swift
   // Contract vector shared with WeekSyncTests.swift.
   const std::vector<WeekEntry> set = {{"2026-11-02", 0x1234ABCDu}, {"2026-11-09", 0}};
   CHECK(weekSetHash(set) == 0x07FCC1C0u);

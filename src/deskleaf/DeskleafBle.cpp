@@ -223,7 +223,9 @@ SyncResult syncWithBridge(const char* requestLine, const AbortCheck shouldAbort,
     while (rx.active || millis() - start < timeoutMs) {
       if (rx.done) break;
       if (!rx.connected) break;
-      if (millis() - rx.lastChunkMs > kChunkTimeoutMs) break;
+      // The bridge fetches the calendar before it answers; until a transfer
+      // runs, only timeoutMs applies.
+      if (rx.active && millis() - rx.lastChunkMs > kChunkTimeoutMs) break;
       if (shouldAbort && shouldAbort()) {
         status = SyncStatus::Aborted;
         break;

@@ -132,14 +132,15 @@ bool parseIsoDate(const std::string& iso, Date& out);
 // The bridge answers SAME, or a LEN body of frames
 //   W:<Monday YYYY-MM-DD>:<n>\n<n bytes JSON array>\n
 // one per changed week (n = 0: the week is empty now). An event is listed in
-// every week it covers. Hashes must match DeskleafCore/WeekSync.swift.
+// every week it covers. A week's hash is FNV-1a over exactly those JSON bytes,
+// so both sides agree by construction. Must match DeskleafCore/WeekSync.swift.
 constexpr int kWeeksBack = 13;   // ~3 months back
 constexpr int kWeeksAhead = 26;  // ~6 months ahead
 constexpr int kWindowWeeks = kWeeksBack + 1 + kWeeksAhead;
 
 Date mondayOf(Date d);
-// Semantic hash of one week's events; 0 for an empty (or missing) week.
-uint32_t weekHash(const std::vector<CalEvent>& events);
+// FNV-1a over a week's frame bytes; 0 for an empty (or missing) week.
+uint32_t weekHash(const char* json, size_t len);
 // FNV-1a over "YYYY-MM-DD:HASH8\n" (upper-case hex) for each week, in order.
 struct WeekEntry {
   std::string monday;

@@ -38,7 +38,7 @@ constexpr const char* kIndexTmp = "/.crosspoint/deskleaf/weeks.idx.tmp";
 // Single payload of builds before the week sync; removed after the first one.
 constexpr const char* kLegacyPayloadPath = "/.crosspoint/deskleaf/calendar.json";
 constexpr const char* kStatePath = "/.crosspoint/deskleaf/state.json";
-constexpr size_t kMaxFile = 512 * 1024;  // one week, or the state
+constexpr size_t kMaxFile = 2 * 1024 * 1024;  // a week, the state or the legacy payload (PSRAM)
 // First refresh after the reader goes to sleep; later ones follow the schedule.
 constexpr uint32_t kFirstWakeMinutes = 2;
 
@@ -146,6 +146,23 @@ std::vector<WeekEntry> windowOf(const Date today, const std::vector<WeekEntry>& 
   return window;
 }
 
+// Weeks that left the window: their files go, so the card does not fill up and
+// old weeks do not reappear. True when anything was removed.
+bool pruneOutside(const std::vector<WeekEntry>& window, std::vector<WeekEntry>& index) {
+  bool removed = false;
+  for (WeekEntry& w : index) {
+    if (w.hash == 0) continue;
+    bool inWindow = false;
+    for (const WeekEntry& k : window) inWindow = inWindow || k.monday == w.monday;
+    if (!inWindow) {
+      Storage.remove(weekPath(w.monday).c_str());
+      w.hash = 0;
+      removed = true;
+    }
+  }
+  return removed;
+}
+
 // Stores the frames of a WREQ answer and drops weeks outside the window.
 // False when a frame or a file write failed; the stored weeks then no longer
 // match the set hash, so the bridge resends everything next time.
@@ -175,21 +192,9 @@ bool applyWeekFrames(const char* body, size_t len, const std::vector<WeekEntry>&
       ok = false;
       continue;
     }
-    setIndexHash(index, frame.monday, weekHash(events));
+    setIndexHash(index, frame.monday, weekHash(frame.json, frame.len));
   }
-  // Weeks that left the window: their files go, so the card does not fill up.
-  const auto inWindow = [&](const std::string& monday) {
-    for (const WeekEntry& w : window) {
-      if (w.monday == monday) return true;
-    }
-    return false;
-  };
-  for (WeekEntry& w : index) {
-    if (w.hash != 0 && !inWindow(w.monday)) {
-      Storage.remove(weekPath(w.monday).c_str());
-      w.hash = 0;
-    }
-  }
+  pruneOutside(window, index);
   if (!saveIndex(index)) ok = false;
   return ok;
 }
@@ -265,6 +270,14 @@ bool CalendarService::loadState(CalendarState& state) const {
 void CalendarService::loadRange(const Date first, const Date last, std::vector<CalEvent>& events) const {
   events.clear();
   const std::vector<WeekEntry> index = loadIndex();
+  if (index.empty()) {
+    // Before the first week sync (or with a bridge that only knows REQ), the
+    // single payload of earlier builds still shows what it covers.
+    size_t len = 0;
+    PsBuffer legacy = readFile(kLegacyPayloadPath, len);
+    if (legacy && parsePayload(legacy.get(), len, events)) return;
+    events.clear();
+  }
   const Date lastMonday = mondayOf(last);
   for (Date monday = mondayOf(first); isoString(monday) <= isoString(lastMonday); monday = addDays(monday, 7)) {
     const std::string key = isoString(monday);
@@ -297,6 +310,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
 SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortCheck shouldAbort,
                                  char* bridgeTzOut) const {
   const auto takeTimezone = [&](const char* tz) {
+    if (!tz || !*tz) return;  // a failed connection sends none; keep what we have
     if (!bridgeTzOut) {
       adoptBridgeTimezone(tz);
       return;
@@ -332,6 +346,8 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
     Storage.remove(kLegacyPayloadPath);
     LOG_INF("DSK", "Stored week frames, %u bytes", static_cast<unsigned>(r.payloadLen));
+  } else if (r.status == SyncStatus::Unchanged && pruneOutside(window, index)) {
+    saveIndex(index);
   }
   if (r.status == SyncStatus::NewPayload || r.status == SyncStatus::Unchanged) {
     state.lastSyncEpoch = static_cast<int64_t>(time(nullptr));

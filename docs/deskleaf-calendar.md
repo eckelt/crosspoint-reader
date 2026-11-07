@@ -44,18 +44,19 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
 The device keeps a window of 40 weeks (13 back, the current one, 26 ahead)
 as one file per week, and asks with
 `WREQ:<set hash>:<battery mV>:<first Monday>:<weeks>`. The set hash is FNV-1a
-over `YYYY-MM-DD:HASH8\n` per week of the window; a week's hash is the
-semantic hash of its events (`einkalSemanticHash`), 0 when it is empty. The
+over `YYYY-MM-DD:HASH8\n` per week of the window; a week's hash is FNV-1a
+over exactly the JSON bytes the bridge sent for it, 0 when it is empty. The
 bridge (deskleaf-display, `swift/Sources/DeskleafCore/WeekSync.swift`) answers
 `TIME`, `TZ` and either `SAME` or `LEN[F]:<n>` with frames
 `W:<Monday>:<n>\n<JSON array>\n` for the weeks that changed (`n` = 0: empty
-now). It remembers what it delivered: when the device's set hash matches,
-only changed weeks are sent; otherwise all of them. An event is listed in
+now). It remembers its last two deliveries: when the device's set hash matches
+one of them, only the weeks changed since are sent; otherwise all of them. An event is listed in
 every week it covers, and the device merges the weeks it loads without
 duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
 `WeekSyncTests.swift`.
 
-The ESP32-C3 Deskleaf keeps its `REQ` payload. Without a set clock the X4 Pro
+The ESP32-C3 Deskleaf keeps its `REQ` payload. Until the first week sync the
+X4 Pro still shows the `calendar.json` of earlier builds. Without a set clock the X4 Pro
 sends one `REQ` first to get `TIME`, then the `WREQ`. While no timezone was
 ever chosen in Settings (the clock keeps UTC), the first sync adopts the
 bridge's `TZ` and saves it; a zone picked by the user always wins. The

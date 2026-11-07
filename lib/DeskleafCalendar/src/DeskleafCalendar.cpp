@@ -488,8 +488,8 @@ bool parseIsoDate(const std::string& iso, Date& out) {
 
 Date mondayOf(const Date d) { return addDays(d, -weekdayMon0(d)); }
 
-uint32_t weekHash(const std::vector<CalEvent>& events) {
-  return events.empty() ? 0u : semanticPayloadHash(events);
+uint32_t weekHash(const char* json, const size_t len) {
+  return len == 0 ? 0u : fnv1a(reinterpret_cast<const uint8_t*>(json), len);
 }
 
 uint32_t weekSetHash(const std::vector<WeekEntry>& weeks) {
