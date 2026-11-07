@@ -45,7 +45,11 @@ void drawFreeDay(const GfxRenderer& r, const char* caption, int top, int bottom)
 void dayTitle(Date day, char* title, size_t titleSize, char* subtitle, size_t subtitleSize, bool withYear);
 
 // Full details of one event between `top` and `bottom`.
-void drawDetail(const GfxRenderer& r, const CalEvent& event, int top, int bottom);
+// Details of one event. Long notes continue on further pages: the first page
+// passes firstNoteBlock -1 (title, time and fields, then notes), later pages
+// the value the page before returned. Returns the first note block of the
+// next page, or -1 on the last page.
+int drawDetail(const GfxRenderer& r, const CalEvent& event, int top, int bottom, int firstNoteBlock);
 
 // Monday-based week containing `day`, one row per day.
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, int top, int bottom);

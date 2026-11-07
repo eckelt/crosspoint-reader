@@ -156,53 +156,71 @@ const unsigned char* placeIcon(const CalEvent& e) {
 }
 
 // Notes in the detail view: the Markdown subset of parseNotes() with headings,
-// drawn bullets and task boxes, and rules.
-void drawNotes(const GfxRenderer& r, const std::string& notes, const int x, int y, const int w, const int bottom) {
+// drawn bullets and task boxes, and rules. Draws blocks from `firstBlock` on as
+// long as they fit whole; returns the first block left for the next page, or
+// -1 when everything was drawn. A block taller than an empty page is cut.
+int drawNotes(const GfxRenderer& r, const std::vector<NoteBlock>& blocks, const int firstBlock, const int x, int y,
+              const int w, const int bottom) {
   const int lh = r.getLineHeight(UI_10_FONT_ID);
-  bool first = true;
-  for (const NoteBlock& b : parseNotes(notes)) {
-    if (y + lh > bottom) return;
+  const int pageTop = y;
+  for (int i = std::max(0, firstBlock); i < static_cast<int>(blocks.size()); ++i) {
+    const NoteBlock& b = blocks[i];
+    const bool first = y == pageTop;
+    int font = UI_10_FONT_ID;
+    auto style = EpdFontFamily::REGULAR;
+    int gapBefore = 0;
+    int textX = x;
     switch (b.kind) {
       case NoteBlock::Kind::Blank:
-        y += lh / 2;
-        break;
+        if (!first) y += lh / 2;
+        continue;
       case NoteBlock::Kind::Rule:
+        if (y + lh > bottom) return i;
         y += lh / 3;
-        for (int i = x; i < x + w; i += 2) r.drawPixel(i, y);
+        for (int px = x; px < x + w; px += 2) r.drawPixel(px, y);
         y += lh / 3;
-        break;
+        continue;
       case NoteBlock::Kind::Heading1:
-        if (!first) y += lh / 3;
-        y = drawLines(r, UI_12_FONT_ID, x, y, w, b.text, 3, bottom, true, EpdFontFamily::BOLD);
+        font = UI_12_FONT_ID;
+        style = EpdFontFamily::BOLD;
+        gapBefore = first ? 0 : lh / 3;
         break;
       case NoteBlock::Kind::Heading2:
-        if (!first) y += lh / 4;
-        y = drawLines(r, UI_10_FONT_ID, x, y, w, b.text, 3, bottom, true, EpdFontFamily::BOLD);
+        style = EpdFontFamily::BOLD;
+        gapBefore = first ? 0 : lh / 4;
         break;
       case NoteBlock::Kind::Paragraph:
-        y = drawLines(r, UI_10_FONT_ID, x, y, w, b.text, 40, bottom, true);
         break;
       case NoteBlock::Kind::Bullet:
       case NoteBlock::Kind::Task:
-      case NoteBlock::Kind::TaskDone: {
-        const int ix = x + 18 * std::min(b.indent, 4);
-        const int mid = y + lh / 2;
-        if (b.kind == NoteBlock::Kind::Bullet) {
-          r.fillRect(ix + 3, mid - 2, 5, 5, true);
-        } else {
-          const int box = 12;
-          r.drawRect(ix, mid - box / 2, box, box, true);
-          if (b.kind == NoteBlock::Kind::TaskDone) {
-            r.drawLine(ix + 2, mid, ix + 5, mid + 3, true);
-            r.drawLine(ix + 5, mid + 3, ix + 10, mid - 3, true);
-          }
-        }
-        y = drawLines(r, UI_10_FONT_ID, ix + 18, y, w - (ix + 18 - x), b.text, 20, bottom, true);
+      case NoteBlock::Kind::TaskDone:
+        textX = x + 18 * std::min(b.indent, 4) + 18;
         break;
+    }
+    const int width = w - (textX - x);
+    const int lines = static_cast<int>(r.wrappedText(font, b.text.c_str(), width, 200, style).size());
+    const int height = gapBefore + std::max(1, lines) * r.getLineHeight(font);
+    // Keep a block for the next page unless it alone does not fit a page.
+    if (y + height > bottom && !first) return i;
+    y += gapBefore;
+    if (textX != x) {
+      const int ix = textX - 18;
+      const int mid = y + lh / 2;
+      if (b.kind == NoteBlock::Kind::Bullet) {
+        r.fillRect(ix + 3, mid - 2, 5, 5, true);
+      } else {
+        constexpr int kBox = 12;
+        r.drawRect(ix, mid - kBox / 2, kBox, kBox, true);
+        if (b.kind == NoteBlock::Kind::TaskDone) {
+          r.drawLine(ix + 2, mid, ix + 5, mid + 3, true);
+          r.drawLine(ix + 5, mid + 3, ix + 10, mid - 3, true);
+        }
       }
     }
-    first = false;
+    y = drawLines(r, font, textX, y, width, b.text, 200, bottom, true, style);
+    if (y + lh > bottom && i + 1 < static_cast<int>(blocks.size())) return i + 1;
   }
+  return -1;
 }
 
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
@@ -509,11 +527,23 @@ void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, cons
   }
 }
 
-void drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const int bottom) {
+int drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const int bottom, const int firstNoteBlock) {
   const int w = r.getScreenWidth();
   const int x = kMargin + 8;
   const int tw = w - 2 * x;
   int y = top + 12;
+  const std::vector<NoteBlock> blocks = parseNotes(e.notes);
+  // Room at the foot for "weiter »" when the notes continue on another page.
+  const int notesBottom = bottom - r.getLineHeight(SMALL_FONT_ID) - 4;
+  const auto more = [&](int next) {
+    if (next >= 0) {
+      const char* label = "weiter »";
+      r.drawText(SMALL_FONT_ID, w - x - r.getTextWidth(SMALL_FONT_ID, label), notesBottom + 2, label, true);
+    }
+    return next;
+  };
+  // Later pages carry only notes.
+  if (firstNoteBlock >= 0) return more(drawNotes(r, blocks, firstNoteBlock, x, y, tw, notesBottom));
   y = drawLines(r, UI_12_FONT_ID, x, y, tw, e.subject, 3, bottom, true, EpdFontFamily::BOLD) + 6;
 
   std::string when = e.isAllDay ? std::string("ganztägig")
@@ -551,12 +581,12 @@ void drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const in
   field("Kalender", e.calendar);
   field("Hinweise", markerLine(e));
 
-  if (!e.notes.empty() && y + 2 * r.getLineHeight(SMALL_FONT_ID) < bottom) {
-    y += 10;
-    r.drawLine(x, y, w - x, y, true);
-    y += 8;
-    drawNotes(r, e.notes, x, y, tw, bottom);
-  }
+  if (blocks.empty()) return -1;
+  if (y + 2 * r.getLineHeight(SMALL_FONT_ID) >= notesBottom) return more(0);  // notes start on page 2
+  y += 10;
+  r.drawLine(x, y, w - x, y, true);
+  y += 8;
+  return more(drawNotes(r, blocks, 0, x, y, tw, notesBottom));
 }
 
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,

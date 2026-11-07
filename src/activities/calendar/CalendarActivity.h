@@ -51,4 +51,9 @@ class CalendarActivity final : public Activity {
   // Day view tap targets (rebuilt on every day render) and the opened event.
   std::vector<deskleaf::view::HitBox> hits;
   int detailIndex = -1;  // index into `events`
+  // Pages of the opened event: first note block of each page (-1 = page 1 with
+  // the fields). detailNext is what the render of the current page reported.
+  std::vector<int> detailPages{-1};
+  int detailPage = 0;
+  int detailNext = -1;
 };

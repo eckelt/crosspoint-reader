@@ -100,6 +100,10 @@ void CalendarActivity::ensureLoaded(const bool force) {
   events.swap(incoming);
   hits.clear();
   detailIndex = reopened;
+  // The notes may have changed: start the opened event on its first page again.
+  detailPages.assign(1, -1);
+  detailPage = 0;
+  detailNext = -1;
   if (view == View::Detail && reopened < 0) view = View::Day;
   loadedFirst = first;
   loadedLast = last;
@@ -161,7 +165,8 @@ void CalendarActivity::loop() {
 
   using Button = MappedInputManager::Button;
   if (view == View::Detail) {
-    // Back, Confirm or any tap closes the details and returns to the day.
+    // Back, Confirm or a tap closes the details; Left/Right and swipes page
+    // through long notes.
     int tx = 0;
     int ty = 0;
     if (mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture() ||
@@ -169,6 +174,27 @@ void CalendarActivity::loop() {
       view = View::Day;
       detailIndex = -1;
       show();
+      return;
+    }
+    const auto swipe = mappedInput.hasTouch() ? mappedInput.wasSwipe() : MappedInputManager::SwipeDir::None;
+    const bool forward = mappedInput.wasReleased(Button::Right) || mappedInput.wasReleased(Button::Down) ||
+                         mappedInput.wasReleased(Button::PageForward) ||
+                         swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Up;
+    const bool backward = mappedInput.wasReleased(Button::Left) || mappedInput.wasReleased(Button::Up) ||
+                          mappedInput.wasReleased(Button::PageBack) ||
+                          swipe == MappedInputManager::SwipeDir::Right || swipe == MappedInputManager::SwipeDir::Down;
+    int next = -1;
+    {
+      RenderLock lock;
+      next = detailNext;
+    }
+    if (forward && next >= 0) {
+      if (detailPage + 1 >= static_cast<int>(detailPages.size())) detailPages.push_back(next);
+      ++detailPage;
+      requestUpdate();
+    } else if (backward && detailPage > 0) {
+      --detailPage;
+      requestUpdate();
     }
     return;
   }
@@ -253,6 +279,9 @@ void CalendarActivity::loop() {
     }
     if (picked >= 0) {
       detailIndex = picked;
+      detailPages.assign(1, -1);
+      detailPage = 0;
+      detailNext = -1;
       view = View::Detail;
       show();
     }
@@ -327,7 +356,11 @@ void CalendarActivity::render(RenderLock&&) {
         const std::string iso = events[detailIndex].startDate();
         if (iso.size() == 10) d = {std::atoi(iso.c_str()), std::atoi(iso.c_str() + 5), std::atoi(iso.c_str() + 8)};
       }
-      std::snprintf(title, sizeof(title), "Termin");
+      if (detailPage > 0) {
+        std::snprintf(title, sizeof(title), "Termin · Seite %d", detailPage + 1);
+      } else {
+        std::snprintf(title, sizeof(title), "Termin");
+      }
       std::snprintf(subtitle, sizeof(subtitle), "%s, %d. %s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(d)), d.day,
                     deskleaf::monthNameDe(d.month));
       break;
@@ -342,7 +375,8 @@ void CalendarActivity::render(RenderLock&&) {
     renderer.drawCenteredText(UI_10_FONT_ID, (headerHeight + bottom) / 2,
                               "Uhrzeit unbekannt – Bridge auf dem Mac starten", true);
   } else if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
-    view_ns::drawDetail(renderer, events[detailIndex], headerHeight, bottom);
+    const int page = std::min(detailPage, static_cast<int>(detailPages.size()) - 1);
+    detailNext = view_ns::drawDetail(renderer, events[detailIndex], headerHeight, bottom, detailPages[page]);
   } else if (view == View::Day || view == View::Detail) {
     view_ns::drawDay(renderer, events, cursor, today, status, headerHeight, bottom, &hits);
   } else if (view == View::Week) {
