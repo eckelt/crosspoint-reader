@@ -21,8 +21,6 @@ namespace {
 // A sync on entry only when the stored data is older than this.
 constexpr int64_t kAutoSyncAgeSeconds = 60 * 60;
 constexpr unsigned long kSyncLongPressMs = 800;
-// Taps on the right end of the header (where "Stand" is shown) start a sync.
-constexpr int kSyncTapWidth = 160;
 }  // namespace
 
 void CalendarActivity::onEnter() {
@@ -184,10 +182,6 @@ void CalendarActivity::loop() {
     return;
   }
   if (!mappedInput.wasScreenTapped(tx, ty)) return;
-  if (ty < headerHeight && tx >= renderer.getScreenWidth() - kSyncTapWidth) {
-    startSync();
-    return;
-  }
   if (ty < headerHeight) {
     // Tapping the header returns to today in the day view, or cycles views when already there.
     const auto weekendOf = [](deskleaf::Date d) { return deskleaf::addDays(d, 5 - deskleaf::weekdayMon0(d)); };

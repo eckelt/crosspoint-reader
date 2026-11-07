@@ -1,8 +1,8 @@
 #pragma once
 // Deskleaf calendar: day, week and month views of the payload the Deskleaf
 // bridge sends over BLE. Left/Right (or swipes) page, Confirm (or a tap on the
-// header) switches the view, a tap on "Stand" or a long press on Confirm syncs,
-// Back goes home. In the month view a tap on a day opens that day. The sync
+// header) switches the view, a long press on Confirm or the screen syncs, Back
+// goes home. In the month view a tap on a day opens that day. The sync
 // runs on a worker task, so the stored calendar stays usable meanwhile.
 #include <DeskleafCalendar.h>
 

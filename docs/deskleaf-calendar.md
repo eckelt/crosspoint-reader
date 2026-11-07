@@ -14,9 +14,9 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   again without starting the UI or the frontlight. Any button press during a
   timer wake cancels it and boots normally.
 - **Home → Calendar**: day, week and month views. Left/Right or swipes page,
-  Confirm or a header tap switches the view, a tap on "Stand" at the right
-  end of the header, a long press on Confirm or a long touch syncs, a tap on
-  a day in week/month opens it. A tap on an event
+  Confirm or a header tap switches the view (or returns to today), a long
+  press on Confirm or a long touch syncs, a tap on a day in week/month opens
+  it. A tap on an event
   in the day view shows its details; Back, Confirm or a tap returns.
 - Weekends show Saturday and Sunday side by side on a shared hour axis, on
   the sleep screen and in the day view (paging goes Friday, weekend, Monday).
