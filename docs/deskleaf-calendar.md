@@ -14,22 +14,28 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   again without starting the UI or the frontlight. Any button press during a
   timer wake cancels it and boots normally.
 - **Home → Calendar**: day, week and month views. Left/Right or swipes page,
-  Confirm or a header tap switches the view, a long press on Confirm (or a
-  long touch) syncs, a tap on a day in week/month opens it. A tap on an event
+  Confirm or a header tap switches the view, a tap on "Stand" at the right
+  end of the header, a long press on Confirm or a long touch syncs, a tap on
+  a day in week/month opens it. A tap on an event
   in the day view shows its details; Back, Confirm or a tap returns.
 - Weekends show Saturday and Sunday side by side on a shared hour axis, on
   the sleep screen and in the day view (paging goes Friday, weekend, Monday).
-- Event boxes: place icon (Teams, Meet, NE, LinkedIn or an on-site pin) and
-  title, then time · organizer +attendees, then location; series, attachment
-  and Obsidian-note icons (copied from deskleaf-display `include/Icons.h`).
+- Event boxes: title on the left; on the right the place icon (Teams, Meet,
+  Zoom, Webex, NE, LinkedIn, phone or an on-site pin), series and attachment,
+  20x20 from `scripts/deskleaf_icons`. Then time · organizer +attendees,
+  location and notes; the Obsidian icon sits bottom right.
 - A free day (and a completely free weekend) shows the Deskleaf free-day
   motif from deskleaf-display. `scripts/deskleaf_freeday_art.py` generates
   `src/deskleaf/FreeDayArtData.cpp` from it and widens the sides so the sky
   fades into the paper on the wider screen.
 - Multi-day events show on every day they cover. Timed ones keep their times
   on the first day ("ab 09:00") and the last day ("bis 17:00"); fully covered
-  days in between and all-day events show as day bars. Data older than
-  10 minutes is synced on entry. Not shown on cover-grid home themes.
+  days in between and all-day events show as day bars. Not shown on
+  cover-grid home themes.
+- The app shows the stored calendar at once. Data older than an hour syncs on
+  entry. The sync runs on a worker task (`deskleaf::bgsync`), so paging and
+  details stay usable. A screen change or sleep stops it first, and the BLE
+  page turner pauses meanwhile, because both use the same BLE stack.
 
 ## Bridge protocol
 

@@ -120,6 +120,8 @@ MeetingPlatform CalEvent::platform() const {
   if (meetingPlatformRaw == "teams") return MeetingPlatform::Teams;
   if (meetingPlatformRaw == "ne") return MeetingPlatform::Ne;
   if (meetingPlatformRaw == "linkedin") return MeetingPlatform::LinkedIn;
+  if (meetingPlatformRaw == "zoom") return MeetingPlatform::Zoom;
+  if (meetingPlatformRaw == "webex") return MeetingPlatform::Webex;
   const std::string loc = lower(location);
   const std::string text = loc + "\n" + lower(notes);
   if (hasAny(text, {"join.ecke.lt"})) return MeetingPlatform::Ne;
@@ -130,6 +132,8 @@ MeetingPlatform CalEvent::platform() const {
     return MeetingPlatform::Teams;
   }
   if (hasAny(text, {"meet.google.com", "google meet"})) return MeetingPlatform::Meet;
+  if (hasAny(text, {"zoom.us/", "zoom-meeting", "zoom meeting"}) || hasWord(loc, "zoom")) return MeetingPlatform::Zoom;
+  if (hasAny(text, {"webex.com"}) || hasWord(loc, "webex")) return MeetingPlatform::Webex;
   if (hasAny(text, {"linkedin.com"}) || subject.find("LinkedIn") != std::string::npos) return MeetingPlatform::LinkedIn;
   const std::string title = lower(subject);
   // A video platform was ruled out above, so a bare "Call" as the place is a phone call.

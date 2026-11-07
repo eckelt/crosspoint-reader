@@ -2,6 +2,7 @@
 
 #if DESKLEAF_CALENDAR
 
+#include <Arduino.h>
 #include <ArduinoJson.h>
 #include <BatteryMonitor.h>
 #include <GfxRenderer.h>
@@ -11,11 +12,16 @@
 #include <esp_heap_caps.h>
 #include <esp_sleep.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <atomic>
 #include <cstring>
 #include <memory>
 
 #include "CalendarView.h"
 #include "CrossPointSettings.h"
+#include "util/TaskWatchdog.h"
 #include "util/Timezones.h"
 #include "fontIds.h"
 
@@ -162,9 +168,14 @@ bool CalendarService::saveState(const CalendarState& state) const {
 }
 
 SyncStatus CalendarService::sync(std::vector<CalEvent>& events, CalendarState& state, bool* forceRedraw,
-                                 AbortCheck shouldAbort) const {
+                                 AbortCheck shouldAbort, char* bridgeTzOut) const {
   SyncResult r = syncWithBridge(state.payloadHash, batteryMillivolts(), shouldAbort);
-  adoptBridgeTimezone(r.bridgeTz);
+  if (bridgeTzOut) {
+    std::strncpy(bridgeTzOut, r.bridgeTz, sizeof(r.bridgeTz) - 1);
+    bridgeTzOut[sizeof(r.bridgeTz) - 1] = '\0';
+  } else {
+    adoptBridgeTimezone(r.bridgeTz);
+  }
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
     std::vector<CalEvent> fresh;
@@ -237,6 +248,78 @@ void CalendarService::armWakeTimer(const bool firstAfterSleep) const {
   esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(minutes) * 60ULL * 1000000ULL);
   LOG_INF("DSK", "Next calendar refresh in %lu min", static_cast<unsigned long>(minutes));
 }
+
+namespace bgsync {
+namespace {
+// NimBLE client calls block on semaphores while the host task does the work;
+// the payload JSON lives on the heap. 8 KB is unmeasured: the worker logs its
+// stack high-water mark after every sync.
+constexpr uint32_t kStackBytes = 8192;
+
+// Owned by the worker between start() and `done`; by the loop task otherwise.
+struct Job {
+  std::vector<CalEvent> events;
+  CalendarState state;
+  SyncStatus status = SyncStatus::Unchanged;
+  char bridgeTz[64] = "";
+};
+Job* job = nullptr;  // non-null from start() until collect()/stop()
+std::atomic<bool> done{false};
+std::atomic<bool> abortFlag{false};
+
+void worker(void* param) {
+  auto* j = static_cast<Job*>(param);
+  j->status = CALENDAR.sync(j->events, j->state, nullptr, [] { return abortFlag.load(); }, j->bridgeTz);
+  LOG_DBG("DSK", "Sync task stack free: %u bytes", static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+  done = true;  // the worker touches nothing after this
+  vTaskDelete(nullptr);
+}
+
+void waitDone() {
+  while (!done) {
+    resetTaskWatchdogIfSubscribed();
+    delay(10);
+  }
+}
+}  // namespace
+
+bool start(const CalendarState& from) {
+  if (job) return false;
+  job = new (std::nothrow) Job();
+  if (!job) return false;
+  job->state = from;
+  done = false;
+  abortFlag = false;
+  if (xTaskCreate(&worker, "DeskleafSync", kStackBytes, job, 1, nullptr) != pdPASS) {
+    LOG_ERR("DSK", "OOM: sync task");
+    delete job;
+    job = nullptr;
+    return false;
+  }
+  return true;
+}
+
+bool running() { return job != nullptr; }
+
+bool collect(std::vector<CalEvent>& events, CalendarState& state, SyncStatus& status) {
+  if (!job || !done) return false;
+  events.swap(job->events);
+  state = job->state;
+  status = job->status;
+  adoptBridgeTimezone(job->bridgeTz);
+  delete job;
+  job = nullptr;
+  return true;
+}
+
+void stop() {
+  if (!job) return;
+  abortFlag = true;
+  waitDone();
+  delete job;
+  job = nullptr;
+}
+}  // namespace bgsync
 
 }  // namespace deskleaf
 

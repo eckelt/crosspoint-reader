@@ -480,6 +480,10 @@ void enterDeepSleep(bool fromTimeout = false) {
 
   // Stop Bluetooth before plugin delivery can start WiFi; a timeout defers delivery.
   deepSleepInProgress = true;
+#if DESKLEAF_CALENDAR
+  // A calendar sync may hold the BLE stack; it ends before the page turner stops the radio.
+  deskleaf::bgsync::stop();
+#endif
   const bool bluetoothStopped = bleturner::beforeSleep(2000);
   if (!bluetoothStopped) LOG_ERR("SLP", "Bluetooth did not stop; deferring sleep-event delivery");
   deliverSleepPluginEvents(bluetoothStopped);
@@ -913,7 +917,12 @@ void loop() {
   scene.pageShown = homeShown || remoteContext;
   scene.storageBusy = activityManager.requiresExclusiveStorageLoop();
   scene.wifiOn = WiFi.getMode() != WIFI_MODE_NULL;
+#if DESKLEAF_CALENDAR
+  // The page turner pauses while a calendar sync uses the BLE stack.
+  const bool remoteActed = !deskleaf::bgsync::running() && bleturner::tick(scene);
+#else
   const bool remoteActed = bleturner::tick(scene);
+#endif
 
   if (activityManager.requiresExclusiveStorageLoop()) {
     // USB Drive handed the raw SD card to the host. Do not run screenshots,

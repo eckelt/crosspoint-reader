@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rasterizes the SVGs next to this script to the 20x20 title-row icons and
 prints them as C arrays for src/deskleaf/EventIcons.h. Needs rsvg-convert and
-Pillow. teams/meet/ne.svg come from deskleaf-for-obsidian/resources."""
+Pillow. teams/meet/ne/zoom.svg come from deskleaf-for-obsidian/resources."""
 import io
 import os
 import subprocess
@@ -15,12 +15,16 @@ ICONS = {
     'teams': ('kTeams', 18), 'meet': ('kMeet', 20), 'ne': ('kNE', 18), 'linkedin': ('kLinkedIn', 16),
     'pin': ('kOnSite', 19), 'phone': ('kPhone', 17), 'series': ('kSeries', 18),
     'series_moved': ('kSeriesMoved', 18), 'attachment': ('kAttachment', 18),
+    'zoom': ('kZoom', 18), 'webex': ('kWebex', 18),
 }
 
 for name, (cname, size) in ICONS.items():
     png = subprocess.run(['rsvg-convert', '-w', '400', '-h', '400', '--keep-aspect-ratio',
                           os.path.join(HERE, name + '.svg')], capture_output=True, check=True).stdout
-    alpha = Image.open(io.BytesIO(png)).convert('RGBA').split()[3]
+    rgba = Image.open(io.BytesIO(png)).convert('RGBA')
+    # Ink = opaque and dark, so white strokes inside a shape stay open.
+    lum = rgba.convert('L')
+    alpha = Image.composite(Image.eval(lum, lambda v: 255 - v), Image.new('L', rgba.size, 0), rgba.split()[3])
     if name == 'meet':  # drop the half-transparent separator
         alpha = alpha.point(lambda v: 255 if v > 200 else 0)
     alpha = alpha.crop(alpha.getbbox())

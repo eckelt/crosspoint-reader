@@ -38,6 +38,10 @@ const char* platformLabel(MeetingPlatform p) {
       return "LinkedIn";
     case MeetingPlatform::Phone:
       return "Telefon";
+    case MeetingPlatform::Zoom:
+      return "Zoom";
+    case MeetingPlatform::Webex:
+      return "Webex";
     case MeetingPlatform::None:
       break;
   }
@@ -141,6 +145,10 @@ const unsigned char* placeIcon(const CalEvent& e) {
       return icons::kLinkedIn;
     case MeetingPlatform::Phone:
       return icons::kPhone;
+    case MeetingPlatform::Zoom:
+      return icons::kZoom;
+    case MeetingPlatform::Webex:
+      return icons::kWebex;
     case MeetingPlatform::None:
       break;
   }

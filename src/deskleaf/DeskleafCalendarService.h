@@ -30,8 +30,10 @@ class CalendarService {
 
   // One BLE round trip. On a new payload it is stored, `events` replaced and
   // state.payloadHash updated. Blocks for up to ~50 s (scan + transfer).
+  // The bridge's timezone is adopted right away, or copied to bridgeTzOut
+  // (64 bytes) for a caller that must apply it on another task.
   SyncStatus sync(std::vector<CalEvent>& events, CalendarState& state, bool* forceRedraw = nullptr,
-                  AbortCheck shouldAbort = nullptr) const;
+                  AbortCheck shouldAbort = nullptr, char* bridgeTzOut = nullptr) const;
 
   // Sleep screen: draws today's view into the framebuffer and refreshes the panel.
   void renderSleepScreen(GfxRenderer& renderer) const;
@@ -44,6 +46,19 @@ class CalendarService {
   // short delay so a stale screen is refreshed soon after the reader sleeps.
   void armWakeTimer(bool firstAfterSleep) const;
 };
+
+// The calendar app's sync on a worker task, so the stored calendar stays usable
+// meanwhile. Only the loop task calls these. Anything else that drives the BLE
+// radio (the page turner) must call bgsync::stop() before it does.
+namespace bgsync {
+bool start(const CalendarState& from);  // false when one runs or the task cannot start
+bool running();                         // started and not yet collected or stopped
+// True once the worker has finished: moves its result out and releases it.
+// The bridge's timezone is adopted here, on the calling task.
+bool collect(std::vector<CalEvent>& events, CalendarState& state, SyncStatus& status);
+// Aborts a running sync, waits for the worker and drops its result.
+void stop();
+}  // namespace bgsync
 
 // Current local date, or false when the clock is not set yet.
 bool localToday(Date& out, struct tm* tmOut = nullptr);

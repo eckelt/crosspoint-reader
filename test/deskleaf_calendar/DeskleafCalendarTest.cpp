@@ -118,6 +118,14 @@ static void testPlatforms() {
   CHECK(e.platform() == MeetingPlatform::Phone && !e.isOnSite());
   e.location = "Callcenter Altona";
   CHECK(e.platform() == MeetingPlatform::None);
+  e.location = "https://us02web.zoom.us/j/123456789";
+  CHECK(e.platform() == MeetingPlatform::Zoom && !e.isOnSite());
+  e.location = "Webex";
+  CHECK(e.platform() == MeetingPlatform::Webex);
+  e.location = "https://acme.webex.com/meet/nils";
+  CHECK(e.platform() == MeetingPlatform::Webex);
+  e.location = "Zoomstraße 3, Hamburg";
+  CHECK(e.platform() == MeetingPlatform::None);
   e.subject = "Workshop";
   e.location = "Hobenköök, Stockmeyerstraße 43, Hamburg";
   CHECK(e.platform() == MeetingPlatform::None && e.isOnSite());

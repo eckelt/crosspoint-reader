@@ -19,8 +19,10 @@
 
 namespace {
 // A sync on entry only when the stored data is older than this.
-constexpr int64_t kAutoSyncAgeSeconds = 10 * 60;
+constexpr int64_t kAutoSyncAgeSeconds = 60 * 60;
 constexpr unsigned long kSyncLongPressMs = 800;
+// Taps on the right end of the header (where "Stand" is shown) start a sync.
+constexpr int kSyncTapWidth = 160;
 }  // namespace
 
 void CalendarActivity::onEnter() {
@@ -34,45 +36,47 @@ void CalendarActivity::onEnter() {
 }
 
 void CalendarActivity::onExit() {
+  deskleaf::bgsync::stop();
+  syncing = false;
   events.clear();
   events.shrink_to_fit();
   Activity::onExit();
 }
 
-void CalendarActivity::syncNow() {
-  // Blocking by design: the BLE round trip owns the radio and finishes within
-  // the scan + transfer timeouts; the header shows the state meanwhile.
+void CalendarActivity::startSync() {
+  if (syncing) return;
+  if (!deskleaf::bgsync::start(state)) return;
   syncing = true;
-  requestUpdateAndWait();
-  // A held long-press would otherwise cancel the sync right away.
-  while (gpio.rawInputActive()) {
-    resetTaskWatchdogIfSubscribed();
-    delay(10);
-  }
+  requestUpdate();
+}
+
+void CalendarActivity::finishSync() {
   std::vector<deskleaf::CalEvent> incoming;
-  deskleaf::CalendarState newState = state;
-  const auto status =
-      deskleaf::CALENDAR.sync(incoming, newState, nullptr, [] { return gpio.rawInputActive(); });
+  deskleaf::CalendarState newState;
+  auto status = deskleaf::SyncStatus::Unchanged;
+  if (!deskleaf::bgsync::collect(incoming, newState, status)) return;
   {
     RenderLock lock;
     if (status == deskleaf::SyncStatus::NewPayload) {
+      // Keep an opened event open if it is still there; indices change.
+      int reopened = -1;
+      if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+        const auto& open = events[detailIndex];
+        for (size_t i = 0; i < incoming.size(); ++i) {
+          if (incoming[i].subject == open.subject && incoming[i].start == open.start) {
+            reopened = static_cast<int>(i);
+            break;
+          }
+        }
+      }
       events.swap(incoming);
-      // Tap targets and the opened event point into the old vector.
       hits.clear();
-      detailIndex = -1;
-      if (view == View::Detail) view = View::Day;
+      detailIndex = reopened;
+      if (view == View::Detail && reopened < 0) view = View::Day;
     }
     state = newState;
   }
   syncing = false;
-  // The press that cancelled the sync must not also act on the calendar.
-  if (status == deskleaf::SyncStatus::Aborted) {
-    while (gpio.rawInputActive()) {
-      resetTaskWatchdogIfSubscribed();
-      delay(10);
-    }
-    mappedInput.update();
-  }
   const bool hadClock = clockValid;
   clockValid = deskleaf::localToday(today);
   if (!hadClock && clockValid) cursor = today;
@@ -121,10 +125,10 @@ void CalendarActivity::cycleView() {
 int CalendarActivity::contentTop() const { return headerHeight; }
 
 void CalendarActivity::loop() {
+  if (syncing) finishSync();
   if (syncPending) {
     syncPending = false;
-    syncNow();
-    return;
+    startSync();
   }
 
   using Button = MappedInputManager::Button;
@@ -145,7 +149,7 @@ void CalendarActivity::loop() {
     return;
   }
   if (mappedInput.wasLongPressed(Button::Confirm, kSyncLongPressMs)) {
-    syncNow();
+    startSync();
     return;
   }
   if (mappedInput.wasReleased(Button::Confirm)) {
@@ -176,10 +180,14 @@ void CalendarActivity::loop() {
   int tx = 0;
   int ty = 0;
   if (mappedInput.wasScreenLongPress(tx, ty)) {
-    syncNow();
+    startSync();
     return;
   }
   if (!mappedInput.wasScreenTapped(tx, ty)) return;
+  if (ty < headerHeight && tx >= renderer.getScreenWidth() - kSyncTapWidth) {
+    startSync();
+    return;
+  }
   if (ty < headerHeight) {
     // Tapping the header returns to today in the day view, or cycles views when already there.
     const auto weekendOf = [](deskleaf::Date d) { return deskleaf::addDays(d, 5 - deskleaf::weekdayMon0(d)); };

@@ -16,7 +16,7 @@
 
 namespace deskleaf {
 
-enum class MeetingPlatform : uint8_t { None, Teams, Meet, Ne, LinkedIn, Phone };
+enum class MeetingPlatform : uint8_t { None, Teams, Meet, Ne, LinkedIn, Phone, Zoom, Webex };
 
 struct CalEvent {
   // Raw payload fields (also the input of the semantic hash).
