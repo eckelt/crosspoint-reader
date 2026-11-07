@@ -59,7 +59,9 @@ every week it covers, and the device merges the weeks it loads without
 duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
 `WeekSyncTests.swift`.
 
-Syncs that never reach the bridge keep their battery reading in
+Every sync first writes `XVER:<firmware version>`; the bridge records a
+firmware install for the X4 Pro when the version changes. Syncs that never
+reach the bridge keep their battery reading in
 `battery.hist`; the next sync sends them first as
 `XHIS:<epoch>:<mV>;...` lines (each one BLE write), and the bridge files them
 under the X4 Pro with their own time. A bridge without XHIS refuses the line;

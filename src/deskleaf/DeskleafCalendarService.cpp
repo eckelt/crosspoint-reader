@@ -384,12 +384,18 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   const uint16_t millivolts = batteryMillivolts();
   snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d\n", static_cast<unsigned long>(weekSetHash(window)),
            static_cast<unsigned>(millivolts), window.front().monday.c_str(), kWindowWeeks);
-  // Readings of syncs that missed the bridge go first, as XHIS lines.
+  // Before the WREQ: the firmware version (the bridge notes an update when it
+  // changes), then readings of syncs that missed the bridge as XHIS lines.
   std::vector<BatteryReading> history = loadHistory();
   const std::vector<std::string> historyLines = batteryHistoryLines(history);
-  SyncResult r = syncWithBridge(line, shouldAbort, 5, 45000, &historyLines);
+  std::vector<std::string> preamble;
+  preamble.reserve(historyLines.size() + 1);
+  preamble.push_back(std::string("XVER:") + CROSSPOINT_VERSION + "\n");
+  preamble.insert(preamble.end(), historyLines.begin(), historyLines.end());
+  SyncResult r = syncWithBridge(line, shouldAbort, 5, 45000, &preamble);
+  const size_t historySent = r.preambleSent > 0 ? r.preambleSent - 1 : 0;
   size_t delivered = 0;
-  for (size_t i = 0; i < r.preambleSent && i < historyLines.size(); ++i) {
+  for (size_t i = 0; i < historySent && i < historyLines.size(); ++i) {
     delivered += static_cast<size_t>(std::count(historyLines[i].begin(), historyLines[i].end(), ';')) + 1;
   }
   const bool keepReading = !r.requestSent && r.status != SyncStatus::Aborted;
