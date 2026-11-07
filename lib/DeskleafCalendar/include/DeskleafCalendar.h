@@ -161,6 +161,22 @@ bool parseWeekFrames(const char* body, size_t len, std::vector<WeekFrame>& out);
 // multi-day events they share, so merging loaded weeks needs this.
 void appendUnique(std::vector<CalEvent>& into, std::vector<CalEvent>& more);
 
+// --- Notes (Markdown from the Obsidian vault) ----------------------------
+// Line-based subset for the e-ink notes: headings, bullets, tasks and rules.
+// HTML comments are dropped; **bold**, `code` and links lose their markup
+// ([[note|alias]] -> alias, [text](url) -> text). Paragraph lines stay as they
+// are; the view wraps them.
+struct NoteBlock {
+  enum class Kind : uint8_t { Paragraph, Heading1, Heading2, Bullet, Task, TaskDone, Rule, Blank };
+  Kind kind;
+  std::string text;
+  int indent;  // list nesting level, 0 at the margin
+};
+std::vector<NoteBlock> parseNotes(const std::string& notes);
+// The notes as plain lines for small boxes: markup removed, "- " bullets and
+// "[ ]"/"[x]" tasks, no headings markers, rules and blank runs dropped.
+std::string plainNotes(const std::string& notes);
+
 // --- Sleep-screen wake schedule ------------------------------------------
 
 // Minutes until the next background refresh, given local time `now`.

@@ -263,8 +263,34 @@ static void testWeekSync() {
   CHECK(merged.size() == 2 && next.empty());
 }
 
+static void testNotes() {
+  const std::string note =
+      "REMINDER\n\xE2\x94\x80\xE2\x94\x80\xE2\x94\x80\n## Beschreibung\nSquad: **App-SB**\n\n\n"
+      "# Training\nTermin mit [[people/Thomas Koschmieder|Thomas]] und [[Anne]].\n"
+      "<!-- Vorbefuellt aus \"Laufende Themen\" -->\n"
+      "- [ ] Folien schicken\n  - [x] Raum\n* Punkt mit [Link](https://x.y)\n---\n";
+  const auto blocks = parseNotes(note);
+  using K = NoteBlock::Kind;
+  const std::vector<K> kinds = {K::Paragraph, K::Rule, K::Heading2, K::Paragraph, K::Blank, K::Heading1,
+                                K::Paragraph, K::Task, K::TaskDone, K::Bullet, K::Rule};
+  CHECK(blocks.size() == kinds.size());
+  for (size_t i = 0; i < blocks.size() && i < kinds.size(); ++i) CHECK(blocks[i].kind == kinds[i]);
+  if (blocks.size() == kinds.size()) {
+    CHECK(blocks[3].text == "Squad: App-SB");
+    CHECK(blocks[6].text == "Termin mit Thomas und Anne.");
+    CHECK(blocks[8].indent == 1 && blocks[8].text == "Raum");
+    CHECK(blocks[9].text == "Punkt mit Link");
+  }
+  CHECK(plainNotes(note) ==
+        "REMINDER\nBeschreibung\nSquad: App-SB\nTraining\nTermin mit Thomas und Anne.\n"
+        "[ ] Folien schicken\n[x] Raum\n- Punkt mit Link");
+  CHECK(parseNotes("#projekt/deskleaf").size() == 1 && parseNotes("#projekt/deskleaf")[0].kind == K::Paragraph);
+  CHECK(parseNotes("").empty());
+}
+
 int main() {
   testHashContract();
+  testNotes();
   testWeekSync();
   testDaySelection();
   testMultiDay();

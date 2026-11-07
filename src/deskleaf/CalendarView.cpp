@@ -155,6 +155,56 @@ const unsigned char* placeIcon(const CalEvent& e) {
   return e.isOnSite() ? icons::kOnSite : nullptr;
 }
 
+// Notes in the detail view: the Markdown subset of parseNotes() with headings,
+// drawn bullets and task boxes, and rules.
+void drawNotes(const GfxRenderer& r, const std::string& notes, const int x, int y, const int w, const int bottom) {
+  const int lh = r.getLineHeight(UI_10_FONT_ID);
+  bool first = true;
+  for (const NoteBlock& b : parseNotes(notes)) {
+    if (y + lh > bottom) return;
+    switch (b.kind) {
+      case NoteBlock::Kind::Blank:
+        y += lh / 2;
+        break;
+      case NoteBlock::Kind::Rule:
+        y += lh / 3;
+        for (int i = x; i < x + w; i += 2) r.drawPixel(i, y);
+        y += lh / 3;
+        break;
+      case NoteBlock::Kind::Heading1:
+        if (!first) y += lh / 3;
+        y = drawLines(r, UI_12_FONT_ID, x, y, w, b.text, 3, bottom, true, EpdFontFamily::BOLD);
+        break;
+      case NoteBlock::Kind::Heading2:
+        if (!first) y += lh / 4;
+        y = drawLines(r, UI_10_FONT_ID, x, y, w, b.text, 3, bottom, true, EpdFontFamily::BOLD);
+        break;
+      case NoteBlock::Kind::Paragraph:
+        y = drawLines(r, UI_10_FONT_ID, x, y, w, b.text, 40, bottom, true);
+        break;
+      case NoteBlock::Kind::Bullet:
+      case NoteBlock::Kind::Task:
+      case NoteBlock::Kind::TaskDone: {
+        const int ix = x + 18 * std::min(b.indent, 4);
+        const int mid = y + lh / 2;
+        if (b.kind == NoteBlock::Kind::Bullet) {
+          r.fillRect(ix + 3, mid - 2, 5, 5, true);
+        } else {
+          const int box = 12;
+          r.drawRect(ix, mid - box / 2, box, box, true);
+          if (b.kind == NoteBlock::Kind::TaskDone) {
+            r.drawLine(ix + 2, mid, ix + 5, mid + 3, true);
+            r.drawLine(ix + 5, mid + 3, ix + 10, mid - 3, true);
+          }
+        }
+        y = drawLines(r, UI_10_FONT_ID, ix + 18, y, w - (ix + 18 - x), b.text, 20, bottom, true);
+        break;
+      }
+    }
+    first = false;
+  }
+}
+
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
   const bool textBlack = !family;
@@ -241,15 +291,10 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
     cy = drawLines(r, SMALL_FONT_ID, bx, cy, bw, loc, 1, maxY, textBlack);
   }
 
-  // Notes from the Obsidian brain: markdown checkboxes become ASCII markers.
+  // Notes (calendar text and the Obsidian note) as plain lines, markup removed.
   if (!e.notes.empty() && cy + r.getLineHeight(SMALL_FONT_ID) <= maxY) {
-    std::string notes = e.notes;
-    for (const char* box : {"- [ ] ", "- [x] ", "- [X] "}) {
-      for (size_t pos = notes.find(box); pos != std::string::npos; pos = notes.find(box, pos)) {
-        notes.replace(pos, 6, box[3] == ' ' ? "[ ] " : "[x] ");
-      }
-    }
-    drawLines(r, SMALL_FONT_ID, bx, cy + 2, bw - (hasNote ? iconPx + 4 : 0), notes, 6, maxY, textBlack);
+    drawLines(r, SMALL_FONT_ID, bx, cy + 2, bw - (hasNote ? iconPx + 4 : 0), plainNotes(e.notes), 6, maxY,
+              textBlack);
   }
 }
 
@@ -510,13 +555,7 @@ void drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const in
     y += 10;
     r.drawLine(x, y, w - x, y, true);
     y += 8;
-    std::string notes = e.notes;
-    for (const char* box : {"- [ ] ", "- [x] ", "- [X] "}) {
-      for (size_t p = notes.find(box); p != std::string::npos; p = notes.find(box, p)) {
-        notes.replace(p, 6, box[3] == ' ' ? "[ ] " : "[x] ");
-      }
-    }
-    drawLines(r, UI_10_FONT_ID, x, y, tw, notes, 40, bottom, true);
+    drawNotes(r, e.notes, x, y, tw, bottom);
   }
 }
 

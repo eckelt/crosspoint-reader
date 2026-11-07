@@ -19,6 +19,9 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   press on Confirm or a long touch syncs, a tap on a day in week/month opens
   it. A tap on an event
   in the day view shows its details; Back, Confirm or a tap returns.
+- Notes: the detail view renders a Markdown subset (headings, bullets, tasks,
+  rules; HTML comments and link markup removed, `parseNotes`); event boxes
+  show the same notes as plain lines.
 - The month view shows the calendar week at the bottom of each Monday cell.
 - Weekends show Saturday and Sunday side by side on a shared hour axis, on
   the sleep screen and in the day view (paging goes Friday, weekend, Monday).

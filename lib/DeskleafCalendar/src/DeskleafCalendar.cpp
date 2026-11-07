@@ -544,4 +544,149 @@ void appendUnique(std::vector<CalEvent>& into, std::vector<CalEvent>& more) {
   more.clear();
 }
 
+// --- Notes -------------------------------------------------------------------
+
+namespace {
+void eraseAll(std::string& s, const char* what) {
+  const size_t n = std::strlen(what);
+  for (size_t p = s.find(what); p != std::string::npos; p = s.find(what, p)) s.erase(p, n);
+}
+
+// Removes inline markup: **, __, `, [[a|b]] -> b, [[a]] -> a, [t](u) -> t.
+std::string inlineText(std::string s) {
+  for (size_t p = s.find("[["); p != std::string::npos; p = s.find("[[", p)) {
+    const size_t end = s.find("]]", p + 2);
+    if (end == std::string::npos) break;
+    std::string inner = s.substr(p + 2, end - p - 2);
+    const size_t bar = inner.rfind('|');
+    if (bar != std::string::npos) {
+      inner = inner.substr(bar + 1);
+    } else {
+      const size_t hash = inner.find('#');
+      if (hash != std::string::npos && hash > 0) inner = inner.substr(0, hash);
+      const size_t slash = inner.rfind('/');
+      if (slash != std::string::npos) inner = inner.substr(slash + 1);
+    }
+    s.replace(p, end + 2 - p, inner);
+    p += inner.size();
+  }
+  for (size_t p = s.find('['); p != std::string::npos; p = s.find('[', p + 1)) {
+    const size_t close = s.find("](", p);
+    const size_t end = close == std::string::npos ? std::string::npos : s.find(')', close);
+    if (close == std::string::npos || end == std::string::npos || s.find('\n', p) < end) continue;
+    const std::string text = s.substr(p + 1, close - p - 1);
+    s.replace(p, end + 1 - p, text);
+  }
+  eraseAll(s, "**");
+  eraseAll(s, "__");
+  eraseAll(s, "`");
+  return s;
+}
+
+bool isRule(const std::string& t) {
+  if (t.size() < 3) return false;
+  // "---", "***", "___" or the bridge's "────────" (U+2500, E2 94 80).
+  if (t.find_first_not_of('-') == std::string::npos || t.find_first_not_of('*') == std::string::npos ||
+      t.find_first_not_of('_') == std::string::npos) {
+    return true;
+  }
+  if (t.size() % 3 != 0) return false;
+  for (size_t i = 0; i < t.size(); i += 3) {
+    if (t.compare(i, 3, "\xE2\x94\x80") != 0) return false;
+  }
+  return true;
+}
+}  // namespace
+
+std::vector<NoteBlock> parseNotes(const std::string& notes) {
+  std::string text = notes;
+  for (size_t p = text.find("<!--"); p != std::string::npos; p = text.find("<!--", p)) {
+    const size_t end = text.find("-->", p + 4);
+    size_t stop = end == std::string::npos ? text.size() : end + 3;
+    // A comment on its own line takes the line with it.
+    const bool ownLine = (p == 0 || text[p - 1] == '\n') && (stop == text.size() || text[stop] == '\n');
+    if (ownLine && stop < text.size()) stop += 1;
+    text.erase(p, stop - p);
+  }
+  std::vector<NoteBlock> out;
+  size_t start = 0;
+  while (start <= text.size()) {
+    size_t end = text.find('\n', start);
+    if (end == std::string::npos) end = text.size();
+    std::string line = text.substr(start, end - start);
+    start = end + 1;
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    size_t lead = 0;
+    while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t')) lead += 1;
+    const int indent = static_cast<int>(lead / 2);
+    std::string t = line.substr(lead);
+    while (!t.empty() && (t.back() == ' ' || t.back() == '\t')) t.pop_back();
+
+    NoteBlock b{NoteBlock::Kind::Paragraph, std::string(), 0};
+    if (t.empty()) {
+      b.kind = NoteBlock::Kind::Blank;
+      if (!out.empty() && out.back().kind == NoteBlock::Kind::Blank) continue;
+    } else if (isRule(t)) {
+      b.kind = NoteBlock::Kind::Rule;
+    } else if (t.rfind("# ", 0) == 0) {
+      b.kind = NoteBlock::Kind::Heading1;
+      b.text = inlineText(t.substr(2));
+    } else if (t[0] == '#') {
+      size_t hashes = t.find_first_not_of('#');
+      if (hashes != std::string::npos && hashes <= 6 && t[hashes] == ' ') {
+        b.kind = NoteBlock::Kind::Heading2;
+        b.text = inlineText(t.substr(hashes + 1));
+      } else {
+        b.text = inlineText(t);  // a #tag line
+      }
+    } else if ((t[0] == '-' || t[0] == '*' || t[0] == '+') && t.size() > 1 && t[1] == ' ') {
+      std::string rest = t.substr(2);
+      b.indent = indent;
+      if (rest.rfind("[ ] ", 0) == 0 || rest == "[ ]") {
+        b.kind = NoteBlock::Kind::Task;
+        rest = rest.size() > 3 ? rest.substr(4) : std::string();
+      } else if (rest.rfind("[x] ", 0) == 0 || rest.rfind("[X] ", 0) == 0 || rest == "[x]" || rest == "[X]") {
+        b.kind = NoteBlock::Kind::TaskDone;
+        rest = rest.size() > 3 ? rest.substr(4) : std::string();
+      } else {
+        b.kind = NoteBlock::Kind::Bullet;
+      }
+      b.text = inlineText(rest);
+    } else {
+      b.text = inlineText(t);
+    }
+    out.push_back(std::move(b));
+  }
+  while (!out.empty() && out.back().kind == NoteBlock::Kind::Blank) out.pop_back();
+  while (!out.empty() && out.front().kind == NoteBlock::Kind::Blank) out.erase(out.begin());
+  return out;
+}
+
+std::string plainNotes(const std::string& notes) {
+  std::string out;
+  for (const NoteBlock& b : parseNotes(notes)) {
+    std::string line;
+    switch (b.kind) {
+      case NoteBlock::Kind::Blank:
+      case NoteBlock::Kind::Rule:
+        continue;
+      case NoteBlock::Kind::Bullet:
+        line = "- " + b.text;
+        break;
+      case NoteBlock::Kind::Task:
+        line = "[ ] " + b.text;
+        break;
+      case NoteBlock::Kind::TaskDone:
+        line = "[x] " + b.text;
+        break;
+      default:
+        line = b.text;
+        break;
+    }
+    if (!out.empty()) out += '\n';
+    out += line;
+  }
+  return out;
+}
+
 }  // namespace deskleaf
