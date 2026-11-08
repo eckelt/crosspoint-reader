@@ -18,7 +18,10 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
   or month is shown, otherwise it returns to today in that view. A long
   press on Confirm or a long touch syncs, a tap on a day in week/month opens
   it. A tap on an event
-  in the day view shows its details; Back, Confirm or a tap returns.
+  in the day view opens a popup card over the faded day (when, calendar,
+  title, icon chips, place, organizer, notes preview; as tall as its
+  content). A tap on the card or Confirm opens the detail page with its own
+  header (calendar · date, title, time); a tap beside it or Back closes it.
 - Notes: the detail view renders a Markdown subset (headings, bullets, tasks,
   rules; HTML comments and link markup removed, `parseNotes`); event boxes
   show the same notes as plain lines. Long notes continue on further pages:

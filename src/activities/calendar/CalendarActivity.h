@@ -23,7 +23,7 @@ class CalendarActivity final : public Activity {
   bool preventAutoSleep() override { return syncing; }
 
  private:
-  enum class View : uint8_t { Day, Week, Month, Detail };
+  enum class View : uint8_t { Day, Week, Month, Popup, Detail };
 
   void step(int direction);
   void cycleView();
@@ -33,6 +33,7 @@ class CalendarActivity final : public Activity {
   void rangeFor(deskleaf::Date& first, deskleaf::Date& last) const;
   void ensureLoaded(bool force);
   void show();  // ensureLoaded + requestUpdate after a view or cursor change
+  void openDetailPage();
   int contentTop() const;
 
   std::vector<deskleaf::CalEvent> events;
@@ -51,6 +52,8 @@ class CalendarActivity final : public Activity {
   // Day view tap targets (rebuilt on every day render) and the opened event.
   std::vector<deskleaf::view::HitBox> hits;
   int detailIndex = -1;  // index into `events`
+  // The popup card's rectangle (set by render) for tap tests.
+  deskleaf::view::HitBox popupBox{0, 0, 0, 0, nullptr};
   // Pages of the opened event: first note block of each page (-1 = page 1 with
   // the fields). detailNext is what the render of the current page reported.
   std::vector<int> detailPages{-1};

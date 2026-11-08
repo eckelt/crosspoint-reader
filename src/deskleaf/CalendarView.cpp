@@ -55,20 +55,6 @@ std::string hhmm(int minutes) {
 }
 
 // Line of small markers under the title: platform, series, attachment, attendees.
-std::string markerLine(const CalEvent& e) {
-  std::string out;
-  auto add = [&out](const std::string& s) {
-    if (s.empty()) return;
-    if (!out.empty()) out += " · ";
-    out += s;
-  };
-  if (const char* p = platformLabel(e.platform())) add(p);
-  if (e.isRecurring) add(e.isMoved ? "Serie (verschoben)" : "Serie");
-  if (e.hasAttachments) add("Anhang");
-  if (e.hasObsidianNote || e.location.find("obsidian://") != std::string::npos) add("Notiz");
-  if (e.isCancelled) add("abgesagt");
-  return out;
-}
 
 // Draws wrapped lines and returns the y after the last one; stops at maxY.
 int drawLines(const GfxRenderer& r, int font, int x, int y, int w, const std::string& text, int maxLines, int maxY,
@@ -527,14 +513,207 @@ void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, cons
   }
 }
 
-int drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const int bottom, const int firstNoteBlock) {
+namespace {
+
+// What kind of event it is, as icon + short word: the call service or the
+// place, series, attachment, Obsidian note, cancelled.
+struct Chip {
+  const unsigned char* icon;  // 20x20, or nullptr for text only
+  std::string label;
+};
+
+std::vector<Chip> chipsFor(const CalEvent& e) {
+  std::vector<Chip> chips;
+  if (const unsigned char* place = placeIcon(e)) {
+    const char* label = platformLabel(e.platform());
+    chips.push_back({place, label ? label : "Vor Ort"});
+  }
+  if (e.isRecurring) chips.push_back({e.isMoved ? icons::kSeriesMoved : icons::kSeries, e.isMoved ? "verschoben" : "Serie"});
+  if (e.hasAttachments) chips.push_back({icons::kAttachment, "Anhang"});
+  if (e.hasObsidianNote || e.location.find("obsidian://") != std::string::npos) chips.push_back({nullptr, "Notiz"});
+  if (e.isImportant()) chips.push_back({nullptr, "wichtig"});
+  if (e.isCancelled) chips.push_back({nullptr, "abgesagt"});
+  return chips;
+}
+
+// One row of chips, wrapping; returns the y below. draw=false only measures.
+int drawChips(const GfxRenderer& r, const std::vector<Chip>& chips, const int x, int y, const int w, const bool draw,
+              const bool black = true) {
+  if (chips.empty()) return y;
+  const int lh = std::max(icons::kSize, r.getLineHeight(UI_10_FONT_ID));
+  int cx = x;
+  for (const Chip& c : chips) {
+    const int textW = r.getTextWidth(UI_10_FONT_ID, c.label.c_str());
+    const int chipW = (c.icon ? icons::kSize + 5 : 0) + textW;
+    if (cx > x && cx + chipW > x + w) {
+      cx = x;
+      y += lh + 4;
+    }
+    if (draw) {
+      if (c.icon) drawIcon(r, c.icon, icons::kSize, icons::kSize, cx, y + (lh - icons::kSize) / 2, 1, black);
+      r.drawText(UI_10_FONT_ID, cx + (c.icon ? icons::kSize + 5 : 0), y + (lh - r.getLineHeight(UI_10_FONT_ID)) / 2,
+                 c.label.c_str(), black);
+    }
+    cx += chipW + 16;
+  }
+  return y + lh;
+}
+
+std::string shortDate(const std::string& iso) {
+  Date d{};
+  if (!parseIsoDate(iso, d)) return iso;
+  char buf[24];
+  std::snprintf(buf, sizeof(buf), "%s %d.%d.", weekdayShortDe(weekdayMon0(d)), d.day, d.month);
+  return buf;
+}
+
+// "Fr 6.11. · 11:30–12:10 · 40 min", "Fr 6.11. · ganztägig",
+// "Fr 6.11. – So 8.11. · ab 09:00 bis 17:00".
+std::string whenLine(const CalEvent& e) {
+  std::string out = shortDate(e.startDate());
+  if (e.lastDate() != e.startDate()) {
+    out += " – " + shortDate(e.lastDate());
+    if (!e.isAllDay && e.end.size() >= 16) out += "  ·  ab " + hhmm(e.startMinutes()) + " bis " + e.end.substr(11, 5);
+    return out;
+  }
+  if (e.isAllDay) return out + "  ·  ganztägig";
+  const int minutes = e.endMinutes() - e.startMinutes();
+  out += "  ·  " + hhmm(e.startMinutes()) + "–" + hhmm(e.endMinutes() % (24 * 60));
+  if (minutes > 0) {
+    char dur[24];
+    if (minutes % 60 == 0) {
+      std::snprintf(dur, sizeof(dur), "%d h", minutes / 60);
+    } else if (minutes > 60) {
+      std::snprintf(dur, sizeof(dur), "%d h %d min", minutes / 60, minutes % 60);
+    } else {
+      std::snprintf(dur, sizeof(dur), "%d min", minutes);
+    }
+    out += "  ·  " + std::string(dur);
+  }
+  return out;
+}
+
+std::string whoLine(const CalEvent& e) {
+  std::string who = e.organizerName();
+  if (e.numAttendees > 0) who += (who.empty() ? "" : "  ·  ") + ("+" + std::to_string(e.numAttendees));
+  return who;
+}
+
+// A labelled field; empty values are skipped. Returns the y below.
+int drawField(const GfxRenderer& r, const char* label, const std::string& value, const int x, int y, const int w,
+              const int bottom, const bool draw) {
+  if (value.empty()) return y;
+  y += 6;
+  if (draw) r.drawText(SMALL_FONT_ID, x, y, label, true, EpdFontFamily::BOLD);
+  y += r.getLineHeight(SMALL_FONT_ID);
+  if (!draw) {
+    const int lines = static_cast<int>(r.wrappedText(UI_10_FONT_ID, value.c_str(), w, 3).size());
+    return y + std::max(1, lines) * r.getLineHeight(UI_10_FONT_ID);
+  }
+  return drawLines(r, UI_10_FONT_ID, x, y, w, value, 3, bottom, true);
+}
+
+// Popup card body; draw=false measures. Returns the y below the content.
+int popupBody(const GfxRenderer& r, const CalEvent& e, const int x, int y, const int w, const int bottom,
+              const bool draw) {
+  // When, and the calendar as a small tag on the right.
+  const int tagW = r.getTextWidth(SMALL_FONT_ID, e.calendar.c_str(), EpdFontFamily::BOLD) + 14;
+  const int whenW = e.calendar.empty() ? w : w - tagW - 8;
+  const std::string when = r.truncatedText(SMALL_FONT_ID, whenLine(e).c_str(), whenW);
+  const int smallH = r.getLineHeight(SMALL_FONT_ID);
+  if (draw) {
+    r.drawText(SMALL_FONT_ID, x, y + 2, when.c_str(), true);
+    if (!e.calendar.empty()) {
+      r.drawRoundedRect(x + w - tagW, y, tagW, smallH + 4, 1, 8, true);
+      r.drawText(SMALL_FONT_ID, x + w - tagW + 7, y + 2, e.calendar.c_str(), true, EpdFontFamily::BOLD);
+    }
+  }
+  y += smallH + 10;
+  const int titleLines =
+      std::max(1, static_cast<int>(r.wrappedText(UI_12_FONT_ID, e.subject.c_str(), w, 3, EpdFontFamily::BOLD).size()));
+  if (draw) drawLines(r, UI_12_FONT_ID, x, y, w, e.subject, 3, bottom, true, EpdFontFamily::BOLD);
+  y += titleLines * r.getLineHeight(UI_12_FONT_ID) + 6;
+  y = drawChips(r, chipsFor(e), x, y, w, draw);
+
+  const std::string place = e.isOnSite() ? e.displayLocation() : std::string();
+  const std::string who = whoLine(e);
+  const std::string notes = plainNotes(e.notes);
+  if (!place.empty() || !who.empty() || !notes.empty()) {
+    y += 8;
+    if (draw) r.drawLine(x, y, x + w, y, true);
+    y += 2;
+  }
+  y = drawField(r, "Ort", place, x, y, w, bottom, draw);
+  y = drawField(r, "Organisation", who, x, y, w, bottom, draw);
+  if (!notes.empty()) {
+    // A preview; the full notes are on the detail page.
+    constexpr int kPreviewLines = 4;
+    const auto lines = r.wrappedText(SMALL_FONT_ID, notes.c_str(), w, kPreviewLines + 1);
+    const int shown = std::min(kPreviewLines, static_cast<int>(lines.size()));
+    y += 8;
+    if (draw) drawLines(r, SMALL_FONT_ID, x, y, w, notes, kPreviewLines, bottom, true);
+    y += shown * smallH;
+  }
+  return y;
+}
+
+}  // namespace
+
+void fadeScreen(const GfxRenderer& r) {
+  // Every other dot white: black becomes mid gray, gray becomes lighter.
+  const int w = r.getScreenWidth();
+  const int h = r.getScreenHeight();
+  for (int y = 0; y < h; ++y) {
+    for (int x = y & 1; x < w; x += 2) r.drawPixel(x, y, false);
+  }
+}
+
+HitBox drawPopup(const GfxRenderer& r, const CalEvent& e, const int top, const int bottom) {
+  fadeScreen(r);
+  const int w = r.getScreenWidth();
+  constexpr int kOuter = 20;
+  constexpr int kPad = 16;
+  const int cardW = w - 2 * kOuter;
+  const int innerW = cardW - 2 * kPad;
+  const int hintH = r.getLineHeight(SMALL_FONT_ID) + 8;
+  const int maxH = bottom - top - 2 * kOuter;
+  const int contentH = popupBody(r, e, 0, 0, innerW, maxH, false);
+  const int cardH = std::min(maxH, contentH + 2 * kPad + hintH);
+  const int cardX = kOuter;
+  const int cardY = top + (bottom - top - cardH) / 2;
+  // Shadow, white card, frame.
+  r.fillRect(cardX + 4, cardY + 4, cardW, cardH, true);
+  r.fillRect(cardX, cardY, cardW, cardH, false);
+  r.drawRect(cardX, cardY, cardW, cardH, 2, true);
+  popupBody(r, e, cardX + kPad, cardY + kPad, innerW, cardY + cardH - hintH, true);
+  const char* hint = "Tippen für alle Details";
+  r.drawText(SMALL_FONT_ID, cardX + kPad, cardY + cardH - hintH, hint, true);
+  return HitBox{cardX, cardY, cardW, cardH, &e};
+}
+
+int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const int firstNoteBlock) {
   const int w = r.getScreenWidth();
   const int x = kMargin + 8;
   const int tw = w - 2 * x;
-  int y = top + 12;
+  // Header: calendar and date small, the title, then the time.
+  const int smallH = r.getLineHeight(SMALL_FONT_ID);
+  const int titleH = r.getLineHeight(UI_12_FONT_ID);
+  const int titleLines =
+      std::max(1, static_cast<int>(r.wrappedText(UI_12_FONT_ID, e.subject.c_str(), tw, 3, EpdFontFamily::BOLD).size()));
+  const int headerH = 10 + smallH + 4 + titleLines * titleH + 4 + r.getLineHeight(UI_10_FONT_ID) + 10;
+  r.fillRect(0, 0, w, headerH, true);
+  std::string top = e.calendar.empty() ? shortDate(e.startDate()) : e.calendar + "  ·  " + shortDate(e.startDate());
+  if (firstNoteBlock >= 0) top += "  ·  Fortsetzung";
+  r.drawText(SMALL_FONT_ID, x, 10, top.c_str(), false);
+  int y = drawLines(r, UI_12_FONT_ID, x, 10 + smallH + 4, tw, e.subject, 3, headerH, false, EpdFontFamily::BOLD);
+  const std::string when = whenLine(e);
+  const size_t dot = when.find("  ·  ");
+  // The date is already above; the line below the title is the time.
+  r.drawText(UI_10_FONT_ID, x, y + 4, (dot == std::string::npos ? when : when.substr(dot + 5)).c_str(), false);
+  y = headerH + 12;
+
   const std::vector<NoteBlock> blocks = parseNotes(e.notes);
-  // Room at the foot for "weiter »" when the notes continue on another page.
-  const int notesBottom = bottom - r.getLineHeight(SMALL_FONT_ID) - 4;
+  const int notesBottom = bottom - smallH - 4;
   const auto more = [&](int next) {
     if (next >= 0) {
       const char* label = "weiter »";
@@ -544,48 +723,18 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int top, const int
   };
   // Later pages carry only notes.
   if (firstNoteBlock >= 0) return more(drawNotes(r, blocks, firstNoteBlock, x, y, tw, notesBottom));
-  y = drawLines(r, UI_12_FONT_ID, x, y, tw, e.subject, 3, bottom, true, EpdFontFamily::BOLD) + 6;
 
-  std::string when = e.isAllDay ? std::string("ganztägig")
-                                : hhmm(e.startMinutes()) + " – " + hhmm(e.endMinutes() % (24 * 60)) + " Uhr";
-  // Multi-day: name the span; times then refer to the first and last day.
-  if (e.lastDate() != e.startDate()) {
-    Date a{};
-    Date b{};
-    const auto parse = [](const std::string& s, Date& d) {
-      d = {std::atoi(s.substr(0, 4).c_str()), std::atoi(s.substr(5, 2).c_str()), std::atoi(s.substr(8, 2).c_str())};
-    };
-    parse(e.startDate(), a);
-    parse(e.lastDate(), b);
-    char span[64];
-    std::snprintf(span, sizeof(span), "%d.%d. – %d.%d.", a.day, a.month, b.day, b.month);
-    when = span;
-    if (!e.isAllDay && e.end.size() >= 16) {
-      when += "  ·  " + hhmm(e.startMinutes()) + " – " + e.end.substr(11, 5) + " Uhr";
-    }
-  }
-  if (e.isCancelled) when += "  ·  abgesagt";
-  y = drawLines(r, UI_10_FONT_ID, x, y, tw, when, 1, bottom, true, EpdFontFamily::BOLD);
-
-  const auto field = [&](const char* label, const std::string& value) {
-    if (value.empty() || y + 2 * r.getLineHeight(SMALL_FONT_ID) > bottom) return;
-    y += 8;
-    r.drawText(SMALL_FONT_ID, x, y, label, true, EpdFontFamily::BOLD);
-    y += r.getLineHeight(SMALL_FONT_ID);
-    y = drawLines(r, UI_10_FONT_ID, x, y, tw, value, 3, bottom, true);
-  };
-  field("Ort", e.displayLocation());
-  std::string who = e.organizerName();
-  if (e.numAttendees > 0) who += (who.empty() ? "" : "  ·  ") + std::to_string(e.numAttendees) + " Teilnehmer";
-  field("Organisation", who);
-  field("Kalender", e.calendar);
-  field("Hinweise", markerLine(e));
+  y = drawChips(r, chipsFor(e), x, y, tw, true);
+  y = drawField(r, "Ort", e.isOnSite() ? e.displayLocation() : std::string(), x, y, tw, bottom, true);
+  y = drawField(r, "Organisation", e.organizerName(), x, y, tw, bottom, true);
+  y = drawField(r, "Teilnehmer", e.numAttendees > 0 ? std::to_string(e.numAttendees) + " weitere" : std::string(), x,
+                y, tw, bottom, true);
 
   if (blocks.empty()) return -1;
-  if (y + 2 * r.getLineHeight(SMALL_FONT_ID) >= notesBottom) return more(0);  // notes start on page 2
-  y += 10;
+  if (y + 2 * smallH >= notesBottom) return more(0);  // notes start on page 2
+  y += 12;
   r.drawLine(x, y, w - x, y, true);
-  y += 8;
+  y += 10;
   return more(drawNotes(r, blocks, 0, x, y, tw, notesBottom));
 }
 

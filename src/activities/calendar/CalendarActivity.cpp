@@ -88,7 +88,8 @@ void CalendarActivity::ensureLoaded(const bool force) {
   RenderLock lock;
   // Keep an opened event open if it is still there; indices change.
   int reopened = -1;
-  if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+  const bool eventOpen = view == View::Detail || view == View::Popup;
+  if (eventOpen && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
     const auto& open = events[detailIndex];
     for (size_t i = 0; i < incoming.size(); ++i) {
       if (incoming[i].subject == open.subject && incoming[i].start == open.start) {
@@ -104,10 +105,18 @@ void CalendarActivity::ensureLoaded(const bool force) {
   detailPages.assign(1, -1);
   detailPage = 0;
   detailNext = -1;
-  if (view == View::Detail && reopened < 0) view = View::Day;
+  if (eventOpen && reopened < 0) view = View::Day;
   loadedFirst = first;
   loadedLast = last;
   loadedValid = true;
+}
+
+void CalendarActivity::openDetailPage() {
+  detailPages.assign(1, -1);
+  detailPage = 0;
+  detailNext = -1;
+  view = View::Detail;
+  show();
 }
 
 void CalendarActivity::show() {
@@ -117,6 +126,7 @@ void CalendarActivity::show() {
 
 void CalendarActivity::step(const int direction) {
   switch (view) {
+    case View::Popup:
     case View::Detail:
       return;
     case View::Day:
@@ -164,6 +174,27 @@ void CalendarActivity::loop() {
   }
 
   using Button = MappedInputManager::Button;
+  if (view == View::Popup) {
+    // Back or a tap beside the card closes it; Confirm or a tap on it opens
+    // the full page.
+    int tx = 0;
+    int ty = 0;
+    const bool tapped = mappedInput.wasScreenTapped(tx, ty);
+    deskleaf::view::HitBox box{};
+    {
+      RenderLock lock;
+      box = popupBox;
+    }
+    const bool onCard = tapped && tx >= box.x && tx < box.x + box.w && ty >= box.y && ty < box.y + box.h;
+    if (mappedInput.wasReleased(Button::Confirm) || onCard) {
+      openDetailPage();
+    } else if (tapped || mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture()) {
+      view = View::Day;
+      detailIndex = -1;
+      show();
+    }
+    return;
+  }
   if (view == View::Detail) {
     // Back, Confirm or a tap closes the details; Left/Right and swipes page
     // through long notes.
@@ -255,6 +286,7 @@ void CalendarActivity::loop() {
       case View::Month:
         onToday = cursor.year == today.year && cursor.month == today.month;
         break;
+      case View::Popup:
       case View::Detail:
         break;
     }
@@ -279,10 +311,7 @@ void CalendarActivity::loop() {
     }
     if (picked >= 0) {
       detailIndex = picked;
-      detailPages.assign(1, -1);
-      detailPage = 0;
-      detailNext = -1;
-      view = View::Detail;
+      view = View::Popup;
       show();
     }
   } else if (view == View::Month) {
@@ -349,25 +378,16 @@ void CalendarActivity::render(RenderLock&&) {
       std::snprintf(title, sizeof(title), "%s", deskleaf::monthNameDe(cursor.month));
       std::snprintf(subtitle, sizeof(subtitle), "%d", cursor.year);
       break;
-    case View::Detail: {
-      // The event's own first day: on the weekend page it may be Sunday.
-      deskleaf::Date d = cursor;
-      if (detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
-        const std::string iso = events[detailIndex].startDate();
-        if (iso.size() == 10) d = {std::atoi(iso.c_str()), std::atoi(iso.c_str() + 5), std::atoi(iso.c_str() + 8)};
-      }
-      if (detailPage > 0) {
-        std::snprintf(title, sizeof(title), "Termin · Seite %d", detailPage + 1);
-      } else {
-        std::snprintf(title, sizeof(title), "Termin");
-      }
-      std::snprintf(subtitle, sizeof(subtitle), "%s, %d. %s", deskleaf::weekdayNameDe(deskleaf::weekdayMon0(d)), d.day,
-                    deskleaf::monthNameDe(d.month));
+    case View::Popup:
+      view_ns::dayTitle(cursor, title, sizeof(title), subtitle, sizeof(subtitle), true);
       break;
-    }
+    case View::Detail:
+      title[0] = subtitle[0] = '\0';  // the detail page draws its own header
+      break;
   }
 
-  headerHeight = view_ns::drawHeader(renderer, title, subtitle, status);
+  // The detail page draws its own header; the others share the common one.
+  headerHeight = view == View::Detail ? 0 : view_ns::drawHeader(renderer, title, subtitle, status);
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int bottom = renderer.getScreenHeight() - metrics.buttonHintsHeight;
 
@@ -376,9 +396,12 @@ void CalendarActivity::render(RenderLock&&) {
                               "Uhrzeit unbekannt – Bridge auf dem Mac starten", true);
   } else if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
     const int page = std::min(detailPage, static_cast<int>(detailPages.size()) - 1);
-    detailNext = view_ns::drawDetail(renderer, events[detailIndex], headerHeight, bottom, detailPages[page]);
-  } else if (view == View::Day || view == View::Detail) {
+    detailNext = view_ns::drawDetail(renderer, events[detailIndex], bottom, detailPages[page]);
+  } else if (view == View::Day || view == View::Popup || view == View::Detail) {
     view_ns::drawDay(renderer, events, cursor, today, status, headerHeight, bottom, &hits);
+    if (view == View::Popup && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
+      popupBox = view_ns::drawPopup(renderer, events[detailIndex], headerHeight, bottom);
+    }
   } else if (view == View::Week) {
     view_ns::drawWeek(renderer, events, cursor, today, headerHeight, bottom);
   } else {
@@ -386,8 +409,9 @@ void CalendarActivity::render(RenderLock&&) {
   }
 
   const char* nextView = view == View::Day ? "Woche" : view == View::Week ? "Monat" : "Tag";
-  const auto labels = view == View::Detail ? mappedInput.mapLabels(tr(STR_BACK), "", "", "")
-                                           : mappedInput.mapLabels(tr(STR_BACK), nextView, "<", ">");
+  const auto labels = view == View::Detail  ? mappedInput.mapLabels(tr(STR_BACK), "", "<", ">")
+                      : view == View::Popup ? mappedInput.mapLabels(tr(STR_BACK), "Details", "", "")
+                                            : mappedInput.mapLabels(tr(STR_BACK), nextView, "<", ">");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 }
