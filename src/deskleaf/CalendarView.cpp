@@ -771,9 +771,10 @@ void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
         break;
       }
       const std::string dIso = isoString(d);
-      std::string text = e.barOn(dIso) ? std::string("ganztags  ")
-                         : dIso != e.startDate() ? "bis " + hhmm(e.endMinutesOn(dIso) % (24 * 60)) + "  "
-                                                 : hhmm(e.startMinutes()) + "  ";
+      std::string text = e.barOn(dIso)                ? std::string("ganztags  ")
+                         : dIso != e.startDate()      ? "bis " + hhmm(e.endMinutesOn(dIso) % (24 * 60)) + "  "
+                         : e.lastDate() != dIso       ? "ab " + hhmm(e.startMinutes()) + "  "
+                                                      : hhmm(e.startMinutes()) + "–" + hhmm(e.endMinutes() % (24 * 60)) + "  ";
       text += e.subject;
       if (e.isCancelled) text += " (abgesagt)";
       const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - labelW - 16);
