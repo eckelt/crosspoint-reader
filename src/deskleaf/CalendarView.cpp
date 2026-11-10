@@ -398,6 +398,31 @@ void drawAxis(const GfxRenderer& r, const Axis& a, int lineX0, int lineX1) {
   }
 }
 
+std::string shortDate(const std::string& iso);  // defined with the detail page
+
+// A box cut off by the bottom of the axis says where the event really ends, with
+// a small down arrow, so it does not read as ending at the edge.
+void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
+  const int lh = r.getLineHeight(SMALL_FONT_ID);
+  if (h < 4 * lh) return;
+  std::string text = "bis ";
+  if (e.lastDate() != dayIso) {
+    text += shortDate(e.lastDate());
+    if (!e.isAllDay && e.end.size() >= 16) text += " " + e.end.substr(11, 5);
+  } else {
+    text += hhmm(e.endMinutes() % (24 * 60));
+  }
+  const int arrow = 8;
+  const int ty = y + h - lh - 4;
+  const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - 2 * arrow - 16);
+  r.fillRect(x + 1, ty - 2, w - 2, lh + 5, false);  // a white strip keeps the text readable on the fill
+  r.drawLine(x + 1, ty - 2, x + w - 2, ty - 2, true);
+  const int ax = x + 6;
+  const int ay = ty + lh / 2 - arrow / 2;
+  for (int i = 0; i < arrow / 2 + 1; ++i) r.drawLine(ax + i, ay + i, ax + arrow - i, ay + i, true);
+  r.drawText(SMALL_FONT_ID, ax + arrow + 6, ty, t.c_str(), true, EpdFontFamily::BOLD);
+}
+
 void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX, int areaW,
                std::vector<HitBox>* hits) {
   std::vector<LayoutInput> inputs;
@@ -411,6 +436,7 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
     const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
     const int boxH = std::min(bh, a.bottom - by);
     drawEventBox(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
+    if (b.endMin > a.lastHour * 60) drawContinues(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (hits) hits->push_back({bx, by, bw, boxH, d.timed[b.eventIndex]});
   }
 }
