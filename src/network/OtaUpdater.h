@@ -9,6 +9,8 @@ class OtaUpdater {
   size_t otaSize = 0;
   size_t processedSize = 0;
   size_t totalSize = 0;
+  std::string errorDetail;
+  void describeFailure(bool flashOk);
 
  public:
   using ProgressCallback = void (*)(void* ctx);
@@ -35,4 +37,6 @@ class OtaUpdater {
   const std::string& getLatestVersion() const;
   OtaUpdaterError checkForUpdate();
   OtaUpdaterError installUpdate(ProgressCallback onProgress = nullptr, void* ctx = nullptr);
+  // Why the last install failed, in a few short lines for the screen ("" when unknown).
+  const std::string& getErrorDetail() const { return errorDetail; }
 };

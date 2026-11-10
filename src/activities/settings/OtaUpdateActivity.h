@@ -25,7 +25,7 @@ class OtaUpdateActivity : public Activity {
   // Optional detail line shown under the generic "Update failed" heading.
   // Points into the i18n string table (flash-resident, so no lifetime concern);
   // nullptr means no extra detail.
-  const char* failedDetail = nullptr;
+  std::string failedDetail;
   // Cancel/Update confirmation over the version info (replaces the old
   // hand-rolled bottom tap rects).
   OptionPopup confirmPopup;

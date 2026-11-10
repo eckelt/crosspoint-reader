@@ -37,6 +37,7 @@ void applyCommonClientSetup(freeink::SecureHttpClient& http) {
 int g_lastStatus = 0;
 // Whether the last answer came from another origin than the request started at.
 bool g_lastRedirected = false;
+HttpDownloader::Trace g_lastTrace;
 
 // All HTTP(S) fetches go through wolfSSL (the firmware's only TLS stack: it
 // speaks TLS 1.3 and reads large bodies reliably). Plain-http URLs still use a
@@ -51,10 +52,15 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
   freeink::FetchOptions options;
   options.redirectToHttp = downgradeRedirectsToHttp;
   bool answeredBySameOrigin = true;
+  g_lastTrace = {};
   const freeink::FetchResult result = freeink::fetchResumable(
       url, options,
       [&](freeink::SecureHttpClient& http, const bool sameOrigin) {
         answeredBySameOrigin = sameOrigin;
+        ++g_lastTrace.connections;
+        g_lastTrace.lastToRedirect = !sameOrigin;
+        g_lastTrace.freeHeap = ESP.getFreeHeap();
+        g_lastTrace.maxBlock = ESP.getMaxAllocHeap();
         applyCommonClientSetup(http);
         // Credentials and caller headers stay with the starting origin; a
         // redirect elsewhere (or to plain http) gets neither.
@@ -93,6 +99,8 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
 int HttpDownloader::lastStatus() { return g_lastStatus; }
 
 bool HttpDownloader::lastAnswerRedirected() { return g_lastRedirected; }
+
+HttpDownloader::Trace HttpDownloader::lastTrace() { return g_lastTrace; }
 
 bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const std::string& username,
                               const std::string& password, const std::vector<Header>& headers) {

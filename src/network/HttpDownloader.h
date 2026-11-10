@@ -52,6 +52,19 @@ class HttpDownloader {
   static bool lastAnswerRedirected();
 
   /**
+   * What the last fetchUrl()/downloadToFile() went through, for error reports:
+   * how many connections it opened, whether the last one went to a redirect
+   * target, and the internal heap when that last connection was set up.
+   */
+  struct Trace {
+    int connections = 0;
+    bool lastToRedirect = false;
+    uint32_t freeHeap = 0;
+    uint32_t maxBlock = 0;
+  };
+  static Trace lastTrace();
+
+  /**
    * Fetch text content from a URL with optional credentials. `headers` are
    * added to the request, as for downloadToFile().
    */

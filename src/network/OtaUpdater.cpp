@@ -9,9 +9,11 @@
 #include <Memory.h>
 #include <ReleaseJsonParser.h>
 #include <esp_ota_ops.h>
+#include <WiFi.h>
 // clang-format on
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -141,7 +143,46 @@ bool OtaUpdater::isUpdateNewer() const {
 
 const std::string& OtaUpdater::getLatestVersion() const { return latestVersion; }
 
+namespace {
+// GitHub answers the asset URL with a redirect to this download host.
+constexpr const char* kAssetCdnHost = "release-assets.githubusercontent.com";
+constexpr const char* kErrorLogPath = "/.crosspoint/ota-last-error.txt";
+}  // namespace
+
+void OtaUpdater::describeFailure(const bool flashOk) {
+  char buf[200];
+  if (!flashOk) {
+    errorDetail = "Schreiben in den Flash fehlgeschlagen";
+  } else {
+    const HttpDownloader::Trace t = HttpDownloader::lastTrace();
+    const int status = HttpDownloader::lastStatus();
+    const char* where = t.lastToRedirect ? "Download-Server" : "github.com";
+    std::string reason;
+    if (status > 0) {
+      snprintf(buf, sizeof(buf), "HTTP %d", status);
+      reason = buf;
+    } else {
+      // No answer at all: tell a name the network does not resolve from a refused or broken connection.
+      IPAddress ip;
+      const bool resolves = WiFi.hostByName(t.lastToRedirect ? kAssetCdnHost : "github.com", ip) == 1;
+      reason = resolves ? "keine Verbindung (DNS ok)" : "Name nicht auflösbar (DNS)";
+    }
+    snprintf(buf, sizeof(buf), "%s: %s\n%u / %u Bytes · %d Verbindungen\nHeap %u KB frei, Block %u KB", where,
+             reason.c_str(), static_cast<unsigned>(processedSize), static_cast<unsigned>(totalSize), t.connections,
+             static_cast<unsigned>(t.freeHeap / 1024), static_cast<unsigned>(t.maxBlock / 1024));
+    errorDetail = buf;
+  }
+  LOG_ERR("OTA", "%s", errorDetail.c_str());
+  HalFile file;
+  if (Storage.openFileForWrite("OTA", kErrorLogPath, file)) {
+    const std::string line = latestVersion + "\n" + errorDetail + "\n";
+    file.write(reinterpret_cast<const uint8_t*>(line.data()), line.size());
+    file.close();
+  }
+}
+
 OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgress, void* ctx) {
+  errorDetail.clear();
   if (!isUpdateNewer()) {
     return UPDATE_OLDER_ERROR;
   }
@@ -227,6 +268,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
 
   if (!fetchOk || !flashOk) {
     LOG_ERR("OTA", "Firmware install failed (%s)", flashOk ? "download" : "flash write");
+    describeFailure(flashOk);
     esp_ota_abort(otaHandle);
     return flashOk ? HTTP_ERROR : INTERNAL_UPDATE_ERROR;
   }

@@ -155,8 +155,16 @@ void OtaUpdateActivity::render(RenderLock&&) {
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == FAILED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_FAILED), true, EpdFontFamily::BOLD);
-    if (failedDetail != nullptr) {
-      renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, failedDetail);
+    // One centred line per '\n' of the detail.
+    int lineY = top + height + metrics.verticalSpacing;
+    size_t from = 0;
+    while (from < failedDetail.size()) {
+      const size_t nl = failedDetail.find('\n', from);
+      const std::string line = failedDetail.substr(from, nl == std::string::npos ? std::string::npos : nl - from);
+      renderer.drawCenteredText(UI_10_FONT_ID, lineY, line.c_str());
+      lineY += renderer.getLineHeight(UI_10_FONT_ID) + 4;
+      if (nl == std::string::npos) break;
+      from = nl + 1;
     }
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -192,7 +200,8 @@ void OtaUpdateActivity::runUpdateInstall() {
     LOG_DBG("OTA", "Update failed: %d", res);
     {
       RenderLock lock(*this);
-      failedDetail = res == OtaUpdater::WRONG_DEVICE_ERROR ? tr(STR_FIRMWARE_WRONG_DEVICE) : nullptr;
+      failedDetail = res == OtaUpdater::WRONG_DEVICE_ERROR ? std::string(tr(STR_FIRMWARE_WRONG_DEVICE))
+                                                             : updater.getErrorDetail();
       state = FAILED;
     }
     requestUpdate();
