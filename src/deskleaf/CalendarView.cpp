@@ -400,11 +400,23 @@ void drawAxis(const GfxRenderer& r, const Axis& a, int lineX0, int lineX1) {
 
 std::string shortDate(const std::string& iso);  // defined with the detail page
 
-// A box cut off by the bottom of the axis says where the event really ends, with
-// a small down arrow, so it does not read as ending at the edge.
+// A box cut off by the bottom of the axis gets a torn lower edge and says where
+// the event really ends, so it does not read as ending at the edge.
 void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const int lh = r.getLineHeight(SMALL_FONT_ID);
-  if (h < 4 * lh) return;
+  constexpr int kTooth = 10;  // width of one tooth of the torn edge
+  constexpr int kDepth = 5;
+  // Torn edge: white teeth cut upwards into the bottom of the fill.
+  const int base = y + h - 1;
+  for (int tx = x; tx < x + w; tx += kTooth) {
+    for (int i = 0; i < kDepth; ++i) {
+      const int half = (kTooth / 2) * (kDepth - i) / kDepth;
+      const int cx = tx + kTooth / 2;
+      r.drawLine(std::max(x, cx - half), base - i, std::min(x + w - 1, cx + half), base - i, false);
+    }
+  }
+  if (h < 3 * lh + kDepth) return;
+
   std::string text = "bis ";
   if (e.lastDate() != dayIso) {
     text += shortDate(e.lastDate());
@@ -412,15 +424,16 @@ void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& d
   } else {
     text += hhmm(e.endMinutes() % (24 * 60));
   }
-  const int arrow = 8;
-  const int ty = y + h - lh - 4;
-  const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - 2 * arrow - 16);
-  r.fillRect(x + 1, ty - 2, w - 2, lh + 5, false);  // a white strip keeps the text readable on the fill
-  r.drawLine(x + 1, ty - 2, x + w - 2, ty - 2, true);
-  const int ax = x + 6;
-  const int ay = ty + lh / 2 - arrow / 2;
-  for (int i = 0; i < arrow / 2 + 1; ++i) r.drawLine(ax + i, ay + i, ax + arrow - i, ay + i, true);
-  r.drawText(SMALL_FONT_ID, ax + arrow + 6, ty, t.c_str(), true, EpdFontFamily::BOLD);
+  constexpr int kArrow = 10;
+  const int ax = x + 7;
+  const int ty = base - kDepth - lh - 2;
+  const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - (ax - x) - kArrow - 12, EpdFontFamily::BOLD);
+  // Fresh fill behind the line, in case notes run this far down.
+  r.fillRectDither(x + 1, ty - 2, w - 2, lh + 3, Color::LightGray);
+  // Filled down chevron, centred on the text line.
+  const int ay = ty + (lh - kArrow / 2) / 2;
+  for (int i = 0; i <= kArrow / 2; ++i) r.drawLine(ax + i, ay + i, ax + kArrow - i, ay + i, true);
+  r.drawText(SMALL_FONT_ID, ax + kArrow + 5, ty, t.c_str(), true, EpdFontFamily::BOLD);
 }
 
 void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX, int areaW,
