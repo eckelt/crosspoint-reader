@@ -346,14 +346,16 @@ DaySplit splitDay(const std::vector<CalEvent>& events, const Date day) {
 
 int barHeight(const GfxRenderer& r) { return r.getLineHeight(UI_10_FONT_ID) + 6; }
 
-// Visible hours: 07-17 by default, widened to cover the day's timed events. A
-// segment coming from or running into another day does not stretch the axis.
+// Visible hours: 07-17 by default, widened to cover the day's timed events plus
+// half an hour of free space below the last one, so the end is visibly the end.
+// A segment coming from or running into another day does not stretch the axis.
+constexpr int kTailMinutes = 30;
 void widenHours(const DaySplit& d, int& firstHour, int& lastHour) {
   for (const CalEvent* e : d.timed) {
     const int s0 = e->startMinutesOn(d.iso);
     const int e0 = e->endMinutesOn(d.iso);
     if (s0 > 0) firstHour = std::min(firstHour, s0 / 60);
-    if (e0 < 24 * 60) lastHour = std::max(lastHour, (e0 + 59) / 60);
+    if (e0 < 24 * 60) lastHour = std::max(lastHour, (e0 + kTailMinutes + 59) / 60);
   }
   lastHour = std::min(lastHour, 24);
 }
