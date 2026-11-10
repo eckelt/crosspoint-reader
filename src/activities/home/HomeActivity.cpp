@@ -35,7 +35,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count++;
+    count += 2;  // Calendar, Clicker
   }
   return count;
 }
@@ -333,6 +333,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::CALENDAR:
         onCalendarOpen();
         break;
+      case HomeMenuItem::CLICKER:
+        onClickerOpen();
+        break;
       default:
         break;
     }
@@ -542,6 +545,8 @@ void HomeActivity::render(RenderLock&&) {
   if (hasCalendarSlot()) {
     menuItems.push_back(tr(STR_CALENDAR));
     menuIcons.push_back(Recent);
+    menuItems.push_back("Klicker");
+    menuIcons.push_back(Transfer);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -593,5 +598,11 @@ void HomeActivity::onPluginsOpen() { activityManager.goToPlugins(hasOpdsServers)
 void HomeActivity::onCalendarOpen() {
 #if DESKLEAF_CALENDAR
   activityManager.goToCalendar();
+#endif
+}
+
+void HomeActivity::onClickerOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToClicker();
 #endif
 }

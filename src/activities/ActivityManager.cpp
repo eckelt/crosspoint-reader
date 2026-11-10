@@ -28,6 +28,7 @@
 #include "plugins/PluginCatalogActivity.h"
 #if DESKLEAF_CALENDAR
 #include "calendar/CalendarActivity.h"
+#include "calendar/ClickerActivity.h"
 #include "deskleaf/DeskleafCalendarService.h"
 #endif
 #include "reader/ReaderActivity.h"
@@ -330,6 +331,7 @@ void ActivityManager::goToBrowser() {
 
 #if DESKLEAF_CALENDAR
 void ActivityManager::goToCalendar() { replaceActivity(std::make_unique<CalendarActivity>(renderer, mappedInput)); }
+void ActivityManager::goToClicker() { replaceActivity(std::make_unique<ClickerActivity>(renderer, mappedInput)); }
 #endif
 
 void ActivityManager::goToPlugins(bool showOpds) {

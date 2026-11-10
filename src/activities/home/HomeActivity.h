@@ -58,6 +58,8 @@ class HomeActivity final : public Activity {
     if (item == HomeMenuItem::SETTINGS_MENU) return i;
     ++i;
     if (item == HomeMenuItem::CALENDAR) return i;
+    ++i;
+    if (item == HomeMenuItem::CLICKER) return i;
     return 0;
   }
 
@@ -70,7 +72,8 @@ class HomeActivity final : public Activity {
     if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
     if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
 #if DESKLEAF_CALENDAR
-    if (idx == i) return HomeMenuItem::CALENDAR;
+    if (idx == i++) return HomeMenuItem::CALENDAR;
+    if (idx == i) return HomeMenuItem::CLICKER;
 #endif
     return HomeMenuItem::NONE;
   }
@@ -82,6 +85,7 @@ class HomeActivity final : public Activity {
   void onOpdsBrowserOpen();
   void onPluginsOpen();
   void onCalendarOpen();
+  void onClickerOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image
