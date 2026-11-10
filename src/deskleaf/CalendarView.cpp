@@ -569,14 +569,16 @@ std::string shortDate(const std::string& iso) {
   return buf;
 }
 
-// "Fr 6.11. · 11:30–12:10 · 40 min", "Fr 6.11. · ganztägig",
+// "Fr 6.11. · 11:30–12:10 · 40 min", "Fr 6.11. · ganztägig", "Di 10.11. 09:00 – Mi 11.11. 17:00",
 // "Fr 6.11. – So 8.11. · ab 09:00 bis 17:00".
 std::string whenLine(const CalEvent& e) {
   std::string out = shortDate(e.startDate());
   if (e.lastDate() != e.startDate()) {
-    out += " – " + shortDate(e.lastDate());
-    if (!e.isAllDay && e.end.size() >= 16) out += "  ·  ab " + hhmm(e.startMinutes()) + " bis " + e.end.substr(11, 5);
-    return out;
+    // Both ends with their date and no "  ·  ", so the detail header keeps the whole line.
+    if (!e.isAllDay && e.end.size() >= 16) {
+      return out + " " + hhmm(e.startMinutes()) + " – " + shortDate(e.lastDate()) + " " + e.end.substr(11, 5);
+    }
+    return out + " – " + shortDate(e.lastDate());
   }
   if (e.isAllDay) return out + "  ·  ganztägig";
   const int minutes = e.endMinutes() - e.startMinutes();
