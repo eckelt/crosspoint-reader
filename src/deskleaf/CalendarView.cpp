@@ -570,7 +570,7 @@ std::string shortDate(const std::string& iso) {
 }
 
 // "Fr 6.11. · 11:30–12:10 · 40 min", "Fr 6.11. · ganztägig", "Di 10.11. 09:00 – Mi 11.11. 17:00",
-// "Fr 6.11. – So 8.11. · ab 09:00 bis 17:00".
+// "Fr 6.11. – So 8.11.".
 std::string whenLine(const CalEvent& e) {
   std::string out = shortDate(e.startDate());
   if (e.lastDate() != e.startDate()) {
