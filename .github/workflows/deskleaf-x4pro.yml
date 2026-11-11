@@ -86,7 +86,11 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: firmware-x4pro-deskleaf
-          path: .pio/build/x4pro/firmware.bin
+          # The ELF decodes the backtrace in a device's /crash_report.txt.
+          path: |
+            .pio/build/x4pro/firmware.bin
+            .pio/build/x4pro/firmware.elf
+          retention-days: 90
           if-no-files-found: error
 
       - name: Publish release for Wi-Fi update
