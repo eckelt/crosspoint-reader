@@ -131,6 +131,8 @@ TEST(ReleaseJsonParser, RealisticPrettyPrinted) {
   EXPECT_STREQ(p.getTagName(), "v2.4.1");
   EXPECT_STREQ(p.getFirmwareUrl(),
                "https://github.com/crosspoint-reader/crosspoint-reader/releases/download/v2.4.1/firmware.bin");
+  EXPECT_STREQ(p.getFirmwareApiUrl(),
+               "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/assets/100002");
   EXPECT_EQ(p.getFirmwareSize(), 1572864u);
 }
 
@@ -143,6 +145,8 @@ TEST(ReleaseJsonParser, RealisticMinified) {
   EXPECT_STREQ(p.getTagName(), "v2.4.1");
   EXPECT_STREQ(p.getFirmwareUrl(),
                "https://github.com/crosspoint-reader/crosspoint-reader/releases/download/v2.4.1/firmware.bin");
+  EXPECT_STREQ(p.getFirmwareApiUrl(),
+               "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/assets/100002");
   EXPECT_EQ(p.getFirmwareSize(), 1572864u);
 }
 
@@ -181,6 +185,7 @@ TEST(ReleaseJsonParser, FirmwareNotFirstAsset) {
   EXPECT_TRUE(p.foundFirmware());
   EXPECT_STREQ(p.getTagName(), "v1.0.0");
   EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware.bin");
+  EXPECT_STREQ(p.getFirmwareApiUrl(), "");  // no "url" key: the download falls back to the browser URL
   EXPECT_EQ(p.getFirmwareSize(), 987654u);
 }
 
@@ -269,6 +274,8 @@ TEST(ReleaseJsonParser, ChunkedFeedingSmallChunks) {
   EXPECT_STREQ(p.getTagName(), "v2.4.1");
   EXPECT_STREQ(p.getFirmwareUrl(),
                "https://github.com/crosspoint-reader/crosspoint-reader/releases/download/v2.4.1/firmware.bin");
+  EXPECT_STREQ(p.getFirmwareApiUrl(),
+               "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/assets/100002");
   EXPECT_EQ(p.getFirmwareSize(), 1572864u);
 }
 

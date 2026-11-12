@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "FirmwareBoardTag.h"
 #include "FirmwareFlasher.h"
@@ -89,6 +90,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
 
   latestVersion = releaseParser.getTagName();
   otaUrl = releaseParser.getFirmwareUrl();
+  otaApiUrl = releaseParser.getFirmwareApiUrl();
   otaSize = releaseParser.getFirmwareSize();
   totalSize = otaSize;
   updateAvailable = true;
@@ -156,7 +158,7 @@ void OtaUpdater::describeFailure(const bool flashOk) {
   } else {
     const HttpDownloader::Trace t = HttpDownloader::lastTrace();
     const int status = HttpDownloader::lastStatus();
-    const char* where = t.lastToRedirect ? "Download-Server" : "github.com";
+    const char* where = lastHost;
     std::string reason;
     if (status > 0) {
       snprintf(buf, sizeof(buf), "HTTP %d", status);
@@ -164,7 +166,8 @@ void OtaUpdater::describeFailure(const bool flashOk) {
     } else {
       // No answer at all: tell a name the network does not resolve from a refused or broken connection.
       IPAddress ip;
-      const bool resolves = WiFi.hostByName(t.lastToRedirect ? kAssetCdnHost : "github.com", ip) == 1;
+      const bool cdn = strcmp(lastHost, "Download-Server") == 0;
+      const bool resolves = WiFi.hostByName(cdn ? kAssetCdnHost : lastHost, ip) == 1;
       reason = resolves ? "keine Verbindung (DNS ok)" : "Name nicht auflösbar (DNS)";
     }
     snprintf(buf, sizeof(buf),
@@ -173,6 +176,7 @@ void OtaUpdater::describeFailure(const bool flashOk) {
              t.toRedirect, static_cast<unsigned>(t.freeHeap / 1024), static_cast<unsigned>(t.maxBlock / 1024),
              static_cast<int>(WiFi.RSSI()));
     errorDetail = buf;
+    if (!attempts.empty()) errorDetail += "\nVersuche: " + attempts;  // route:HTTP status, 0 = no answer
   }
   LOG_ERR("OTA", "%s", errorDetail.c_str());
   HalFile file;
@@ -222,7 +226,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   // the inactive OTA slot, but esp_ota_abort() below means it never becomes
   // the boot target.
   board_tag::Scanner tagScanner;
-  const bool fetchOk = HttpDownloader::fetchUrl(otaUrl, [&](const uint8_t* data, size_t len) {
+  const auto onData = [&](const uint8_t* data, size_t len) {
     if (hdrLen < sizeof(hdr)) {
       const size_t take = std::min(len, sizeof(hdr) - hdrLen);
       std::memcpy(hdr + hdrLen, data, take);
@@ -260,7 +264,39 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
       }
     }
     return true;
-  });
+  };
+
+  // Two routes to the same file. The API asset URL first: its host just answered the
+  // release check. Then the browser URL on github.com. A transfer that never
+  // started is retried on the other route; one that did start is not, since the
+  // OTA partition was already written to.
+  struct Route {
+    const char* label;
+    const char* host;
+    const std::string* url;
+    std::vector<HttpDownloader::Header> headers;
+  };
+  std::vector<Route> routes;
+  if (!otaApiUrl.empty()) {
+    routes.push_back({"api", "api.github.com", &otaApiUrl, {{"Accept", "application/octet-stream"}}});
+  }
+  routes.push_back({"web", "github.com", &otaUrl, {}});
+  constexpr int kAttempts = 3;
+  bool fetchOk = false;
+  attempts.clear();
+  for (int attempt = 0; attempt < kAttempts; ++attempt) {
+    const Route& route = routes[attempt % routes.size()];
+    if (attempt > 0) delay(1500);
+    lastHost = route.host;
+    fetchOk = HttpDownloader::fetchUrl(*route.url, onData, "", "", route.headers);
+    const HttpDownloader::Trace t = HttpDownloader::lastTrace();
+    if (t.lastToRedirect) lastHost = "Download-Server";
+    char entry[32];
+    snprintf(entry, sizeof(entry), "%s%s:%d", attempts.empty() ? "" : " ", route.label, HttpDownloader::lastStatus());
+    attempts += entry;
+    if (fetchOk || processedSize > 0 || wrongChip || tagScanner.mismatch() || !flashOk) break;
+    LOG_ERR("OTA", "Download attempt %d via %s failed before the first byte", attempt + 1, route.label);
+  }
 
   if (wrongChip || tagScanner.mismatch()) {
     LOG_ERR("OTA", "Firmware install aborted: wrong device");

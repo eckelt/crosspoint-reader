@@ -6,6 +6,9 @@ class OtaUpdater {
   bool updateAvailable = false;
   std::string latestVersion;
   std::string otaUrl;
+  std::string otaApiUrl;  // same file via api.github.com; "" when the release JSON had none
+  std::string attempts;   // one "route:status" per download attempt, for the error report
+  const char* lastHost = "";
   size_t otaSize = 0;
   size_t processedSize = 0;
   size_t totalSize = 0;

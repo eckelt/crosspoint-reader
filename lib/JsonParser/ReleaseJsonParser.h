@@ -22,6 +22,8 @@ class ReleaseJsonParser {
   bool foundFirmware() const;
   const char* getTagName() const;
   const char* getFirmwareUrl() const;
+  // The asset's API URL (api.github.com, needs "Accept: application/octet-stream"); "" when absent.
+  const char* getFirmwareApiUrl() const;
   size_t getFirmwareSize() const;
 
  private:
@@ -37,6 +39,7 @@ class ReleaseJsonParser {
     ASSETS,
     ASSET_NAME,
     ASSET_URL,
+    ASSET_API_URL,
     ASSET_SIZE,
   };
 
@@ -61,12 +64,14 @@ class ReleaseJsonParser {
 
   char tagName[32];
   char firmwareUrl[512];
+  char firmwareApiUrl[160];
   size_t firmwareSize;
   bool tagFound;
   bool firmwareFound;
 
   char currentAssetName[48];
   char currentAssetUrl[512];
+  char currentAssetApiUrl[160];
   size_t currentAssetSize;
 
   char firmwareAssetName[48];
