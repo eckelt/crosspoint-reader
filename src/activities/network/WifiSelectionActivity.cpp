@@ -420,6 +420,12 @@ bool WifiSelectionActivity::tryNextSavedNetworkFromScan() {
       return true;
     }
   }
+  // Saved networks the scan did not see get a try too: a phone hotspot often stops
+  // advertising while nobody is connected, but still answers a join for its name.
+  for (size_t k = 0; k < WIFI_STORE.getCredentialCount(); ++k) {
+    const auto cred = WIFI_STORE.getCredentialAt(k);
+    if (cred && tryAutoConnectCredential(*cred)) return true;
+  }
   return false;
 }
 
