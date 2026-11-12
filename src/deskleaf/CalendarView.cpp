@@ -454,6 +454,38 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
   }
 }
 
+constexpr int kPeekW = 74;  // the next day's column, to see how full it is rather than to read it
+
+// The next working day on the same hour axis: blocks without text, so gaps and
+// busy stretches show at a glance. Bars (all-day events) are left out.
+void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date next, const Axis& a,
+              const int labelY, const int x, const int w) {
+  char label[16];
+  std::snprintf(label, sizeof(label), "%s %d.", weekdayShortDe(weekdayMon0(next)), next.day);
+  const int tw = r.getTextWidth(SMALL_FONT_ID, label, EpdFontFamily::BOLD);
+  r.drawText(SMALL_FONT_ID, x + (w - tw) / 2, labelY, label, true, EpdFontFamily::BOLD);
+  for (int y = a.top; y < a.bottom; y += 3) r.drawPixel(x - 3, y);  // dotted divider
+
+  const DaySplit nd = splitDay(events, next);
+  std::vector<LayoutInput> inputs;
+  inputs.reserve(nd.timed.size());
+  for (const CalEvent* e : nd.timed) inputs.push_back({e->startMinutesOn(nd.iso), e->endMinutesOn(nd.iso)});
+  for (const LayoutBox& b : layoutDay(inputs)) {
+    if (b.endMin <= a.firstHour * 60 || b.startMin >= a.lastHour * 60) continue;
+    const int colW = (w - 2 * (b.groupColumns - 1)) / b.groupColumns;
+    const int bx = x + b.column * (colW + 2);
+    const int bw = colW * b.colSpan + 2 * (b.colSpan - 1);
+    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
+    const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
+    if (nd.timed[b.eventIndex]->isCancelled) {
+      r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
+    } else {
+      r.fillRoundedRect(bx, by, bw, bh, 3, Color::DarkGray);
+      r.fillRoundedRect(bx + 1, by + 1, bw - 2, bh - 2, 2, Color::LightGray);
+    }
+  }
+}
+
 void drawNowLine(const GfxRenderer& r, const Axis& a, int x0, int x1) {
   const time_t now = time(nullptr);
   struct tm lt {};
@@ -468,6 +500,12 @@ void drawNowLine(const GfxRenderer& r, const Axis& a, int x0, int x1) {
 }  // namespace
 
 bool isWeekend(const Date d) { return weekdayMon0(d) >= 5; }
+
+Date peekDay(const Date day) {
+  Date next = addDays(day, 1);
+  while (isWeekend(next)) next = addDays(next, 1);
+  return next;
+}
 
 // The Deskleaf free-day motif with a caption below it.
 void drawFreeDay(const GfxRenderer& r, const char* caption, const int top, const int bottom) {
@@ -484,19 +522,30 @@ void drawDay(const GfxRenderer& r, const std::vector<CalEvent>& events, const Da
   const int w = r.getScreenWidth();
   const DaySplit d = splitDay(events, day);
   const int y = drawBars(r, d, kMargin, w - 2 * kMargin, top + 6, bottom, hits);
+  const Date next = peekDay(day);
+  const DaySplit nd = splitDay(events, next);
+  const bool peek = status.peekNextDay && (!d.timed.empty() || !nd.timed.empty());
 
-  if (d.timed.empty()) {
+  if (d.timed.empty() && !peek) {
     if (d.bars.empty()) {
       drawFreeDay(r, sameDate(day, today) ? "Heute bin ich frei!" : "Frei!", y, bottom);
     }
     return;
   }
 
-  Axis a{y + 8, bottom - 6, 7, 17};
+  const int lh = r.getLineHeight(SMALL_FONT_ID);
+  Axis a{y + 8 + (peek ? lh : 0), bottom - 6, 7, 17};
   widenHours(d, a.firstHour, a.lastHour);
+  if (peek) widenHours(nd, a.firstHour, a.lastHour);
+  const int right = w - kMargin - (peek ? kPeekW + 8 : 0);
   drawAxis(r, a, kMargin + kAxisW - 6, w - kMargin);
-  drawTimed(r, d, a, kMargin + kAxisW, w - kMargin - (kMargin + kAxisW), hits);
-  if (status.showNowLine && sameDate(day, today)) drawNowLine(r, a, kMargin + kAxisW - 10, w - kMargin);
+  drawTimed(r, d, a, kMargin + kAxisW, right - (kMargin + kAxisW), hits);
+  if (peek) {
+    const int px = w - kMargin - kPeekW;
+    drawPeek(r, events, next, a, y + 4, px, kPeekW);
+    if (hits) hits->push_back({px - 4, y, kPeekW + 4 + kMargin, a.bottom - y, nullptr});
+  }
+  if (status.showNowLine && sameDate(day, today)) drawNowLine(r, a, kMargin + kAxisW - 10, right);
 }
 
 void drawWeekend(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date anyWeekendDay,

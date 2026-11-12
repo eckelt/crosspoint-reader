@@ -167,9 +167,11 @@ void OtaUpdater::describeFailure(const bool flashOk) {
       const bool resolves = WiFi.hostByName(t.lastToRedirect ? kAssetCdnHost : "github.com", ip) == 1;
       reason = resolves ? "keine Verbindung (DNS ok)" : "Name nicht auflösbar (DNS)";
     }
-    snprintf(buf, sizeof(buf), "%s: %s\n%u / %u Bytes · %d Verbindungen\nHeap %u KB frei, Block %u KB", where,
+    snprintf(buf, sizeof(buf),
+             "%s: %s\n%u / %u Bytes · Verbindungen %d (Server %d)\nHeap %u KB frei, Block %u KB · WLAN %d dBm", where,
              reason.c_str(), static_cast<unsigned>(processedSize), static_cast<unsigned>(totalSize), t.connections,
-             static_cast<unsigned>(t.freeHeap / 1024), static_cast<unsigned>(t.maxBlock / 1024));
+             t.toRedirect, static_cast<unsigned>(t.freeHeap / 1024), static_cast<unsigned>(t.maxBlock / 1024),
+             static_cast<int>(WiFi.RSSI()));
     errorDetail = buf;
   }
   LOG_ERR("OTA", "%s", errorDetail.c_str());

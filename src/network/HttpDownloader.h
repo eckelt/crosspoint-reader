@@ -58,6 +58,7 @@ class HttpDownloader {
    */
   struct Trace {
     int connections = 0;
+    int toRedirect = 0;  // of those, to the redirect target
     bool lastToRedirect = false;
     uint32_t freeHeap = 0;
     uint32_t maxBlock = 0;

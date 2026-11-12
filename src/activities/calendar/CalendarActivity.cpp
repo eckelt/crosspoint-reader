@@ -76,6 +76,11 @@ void CalendarActivity::rangeFor(deskleaf::Date& first, deskleaf::Date& last) con
   }
   first = deskleaf::mondayOf(cursor);  // day, weekend, week and detail: the cursor's week
   last = deskleaf::addDays(first, 6);
+  // The day view peeks at the next working day, which after Friday is next week's Monday.
+  if (view != View::Week) {
+    const deskleaf::Date next = deskleaf::view::peekDay(cursor);
+    if (deskleaf::isoString(next) > deskleaf::isoString(last)) last = next;
+  }
 }
 
 void CalendarActivity::ensureLoaded(const bool force) {
@@ -304,12 +309,15 @@ void CalendarActivity::loop() {
       RenderLock lock;  // the render task rebuilds `hits`
       for (const auto& hit : hits) {
         if (tx >= hit.x && tx < hit.x + hit.w && ty >= hit.y && ty < hit.y + hit.h) {
-          picked = static_cast<int>(hit.event - events.data());
+          picked = hit.event ? static_cast<int>(hit.event - events.data()) : -2;
           break;
         }
       }
     }
-    if (picked >= 0) {
+    if (picked == -2) {  // the peek column: open that day
+      cursor = deskleaf::view::peekDay(cursor);
+      show();
+    } else if (picked >= 0) {
       detailIndex = picked;
       view = View::Popup;
       show();
@@ -353,6 +361,7 @@ void CalendarActivity::render(RenderLock&&) {
   view_ns::Status status;
   status.lastSyncEpoch = state.lastSyncEpoch;
   status.showNowLine = true;
+  status.peekNextDay = true;
   if (syncing) {
     status.statusText = "Synchronisiere…";
   } else if (state.lastStatus != static_cast<uint8_t>(deskleaf::SyncStatus::Unchanged) &&

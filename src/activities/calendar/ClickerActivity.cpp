@@ -93,7 +93,15 @@ void ClickerActivity::onEnter() {
 void ClickerActivity::onExit() {
   if (held) sendMouse(0, 0);  // never leave the button down on the computer
   if (NimBLEDevice::isInitialized()) {
-    NimBLEDevice::getAdvertising()->stop();
+    // Tear down in order: no new advertising, the computer disconnected, then the stack.
+    // deinit() with a live connection leaves the host task working on freed state.
+    if (server) {
+      server->advertiseOnDisconnect(false);
+      NimBLEDevice::getAdvertising()->stop();
+      for (const uint16_t handle : server->getPeerDevices()) server->disconnect(handle);
+      const unsigned long start = millis();
+      while (server->getConnectedCount() > 0 && millis() - start < 1500) delay(20);
+    }
     NimBLEDevice::deinit(true);  // also frees the server and its services
   }
   delete hid;

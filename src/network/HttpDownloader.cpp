@@ -59,6 +59,7 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
         answeredBySameOrigin = sameOrigin;
         ++g_lastTrace.connections;
         g_lastTrace.lastToRedirect = !sameOrigin;
+        if (!sameOrigin) ++g_lastTrace.toRedirect;
         g_lastTrace.freeHeap = ESP.getFreeHeap();
         g_lastTrace.maxBlock = ESP.getMaxAllocHeap();
         applyCommonClientSetup(http);
