@@ -139,6 +139,17 @@ static void testPlatforms() {
   CHECK(e.platform() == MeetingPlatform::Teams);
 }
 
+static void testAttendees() {
+  const std::string json =
+      R"([{"start":"2026-11-13T10:30:00","end":"2026-11-13T11:00:00","subject":"Briefing","numAttendees":2,"attendees":["Luis","Stefan Munz"]},)"
+      R"({"start":"2026-11-13T12:00:00","end":"2026-11-13T12:30:00","subject":"Alt","numAttendees":1}])";
+  std::vector<CalEvent> events;
+  CHECK(parsePayload(json.data(), json.size(), events));
+  CHECK(events.size() == 2);
+  CHECK(events[0].attendees.size() == 2 && events[0].attendees[1] == "Stefan Munz");
+  CHECK(events[1].attendees.empty() && events[1].numAttendees == 1);
+}
+
 static void testOrganizer() {
   CalEvent e;
   e.organizer = "Koschmieder, Thomas";
@@ -308,6 +319,7 @@ static void testBatteryHistory() {
 }
 
 int main() {
+  testAttendees();
   testHashContract();
   testBatteryHistory();
   testNotes();

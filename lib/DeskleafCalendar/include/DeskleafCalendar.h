@@ -36,6 +36,7 @@ struct CalEvent {
   bool isAllDay = false;
   bool hasObsidianNote = false;
   int numAttendees = 0;
+  std::vector<std::string> attendees;  // names of the others, when the bridge sends them
 
   // Derived for display.
   // Call service from the bridge field, else recognised in location, notes and

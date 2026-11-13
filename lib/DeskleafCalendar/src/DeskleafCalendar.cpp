@@ -227,7 +227,7 @@ bool parsePayload(const char* json, size_t len, std::vector<CalEvent>& out) {
   JsonObject f = filter.add<JsonObject>();
   for (const char* key : {"start", "end", "subject", "summary", "location", "organizer", "importance",
                           "hasAttachments", "meetingPlatform", "isRecurring", "isMoved", "isCancelled", "isAllDay",
-                          "notes", "hasObsidianNote", "calendar", "numAttendees"}) {
+                          "notes", "hasObsidianNote", "calendar", "numAttendees", "attendees"}) {
     f[key] = true;
   }
   JsonDocument doc;
@@ -253,6 +253,9 @@ bool parsePayload(const char* json, size_t len, std::vector<CalEvent>& out) {
     ev.isAllDay = e["isAllDay"] | false;
     ev.hasObsidianNote = e["hasObsidianNote"] | false;
     ev.numAttendees = e["numAttendees"] | 0;
+    for (JsonVariantConst name : e["attendees"].as<JsonArrayConst>()) {
+      if (name.is<const char*>()) ev.attendees.emplace_back(name.as<const char*>());
+    }
     if (ev.start.empty()) continue;
     out.push_back(std::move(ev));
   }
