@@ -454,10 +454,10 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
   }
 }
 
-constexpr int kPeekW = 74;  // the next day's column, to see how full it is rather than to read it
+constexpr int kPeekW = 90;  // the next day's column, to see how full it is more than to read it
 
-// The next working day on the same hour axis: blocks without text, so gaps and
-// busy stretches show at a glance. Bars (all-day events) are left out.
+// The next working day on the same hour axis: blocks with a short title, so gaps
+// and busy stretches show at a glance. Bars (all-day events) are left out.
 void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date next, const Axis& a,
               const int labelY, const int x, const int w) {
   char label[16];
@@ -467,6 +467,7 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
   for (int y = a.top; y < a.bottom; y += 3) r.drawPixel(x - 3, y);  // dotted divider
 
   const DaySplit nd = splitDay(events, next);
+  const int lh = r.getLineHeight(SMALL_FONT_ID);
   std::vector<LayoutInput> inputs;
   inputs.reserve(nd.timed.size());
   for (const CalEvent* e : nd.timed) inputs.push_back({e->startMinutesOn(nd.iso), e->endMinutesOn(nd.iso)});
@@ -477,11 +478,20 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
     const int bw = colW * b.colSpan + 2 * (b.colSpan - 1);
     const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
     const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
-    if (nd.timed[b.eventIndex]->isCancelled) {
+    const CalEvent& e = *nd.timed[b.eventIndex];
+    if (e.isCancelled) {
       r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
     } else {
       r.fillRoundedRect(bx, by, bw, bh, 3, Color::DarkGray);
       r.fillRoundedRect(bx + 1, by + 1, bw - 2, bh - 2, 2, Color::LightGray);
+    }
+    // As much of the title as fits, then the start time when the block is tall enough.
+    if (bh >= lh + 2 && bw >= 24) {
+      const std::string title = r.truncatedText(SMALL_FONT_ID, e.subject.c_str(), bw - 6);
+      r.drawText(SMALL_FONT_ID, bx + 3, by + 1, title.c_str(), true);
+      if (bh >= 2 * lh + 2 && e.startDate() == nd.iso) {
+        r.drawText(SMALL_FONT_ID, bx + 3, by + 1 + lh, hhmm(e.startMinutes()).c_str(), true);
+      }
     }
   }
 }
