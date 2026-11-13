@@ -77,7 +77,7 @@ void CalendarActivity::rangeFor(deskleaf::Date& first, deskleaf::Date& last) con
   }
   first = deskleaf::mondayOf(cursor);  // day, weekend, week and detail: the cursor's week
   last = deskleaf::addDays(first, 6);
-  // The day view peeks at the next working day, which after Friday is next week's Monday.
+  // The day view peeks at the next day, which after Sunday is next week's Monday.
   if (view != View::Week) {
     const deskleaf::Date next = deskleaf::view::peekDay(cursor);
     if (deskleaf::isoString(next) > deskleaf::isoString(last)) last = next;

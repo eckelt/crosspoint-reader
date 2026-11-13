@@ -475,7 +475,7 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
 
 constexpr int kPeekW = 90;  // the next day's column, to see how full it is more than to read it
 
-// The next working day on the same hour axis: blocks with a short title, so gaps
+// The next day on the same hour axis: blocks with a short title, so gaps
 // and busy stretches show at a glance. Bars (all-day events) are left out.
 void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date next, const Axis& a,
               const int labelY, const int x, const int w) {
@@ -530,11 +530,7 @@ void drawNowLine(const GfxRenderer& r, const Axis& a, int x0, int x1) {
 
 bool isWeekend(const Date d) { return weekdayMon0(d) >= 5; }
 
-Date peekDay(const Date day) {
-  Date next = addDays(day, 1);
-  while (isWeekend(next)) next = addDays(next, 1);
-  return next;
-}
+Date peekDay(const Date day) { return addDays(day, 1); }
 
 // The Deskleaf free-day motif with a caption below it.
 void drawFreeDay(const GfxRenderer& r, const char* caption, const int top, const int bottom) {

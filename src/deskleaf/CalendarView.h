@@ -18,7 +18,7 @@ struct Status {
   uint8_t active = 0;                // a sync running now over: 0 none, 1 Bluetooth, 2 Wi-Fi
   int64_t lastAttemptEpoch = 0;      // a later failed attempt is shown below the sync time
   bool showNowLine = false;          // interactive view only; the sleep screen would go stale
-  bool peekNextDay = false;          // day view: a narrow column with the next working day on the right
+  bool peekNextDay = false;          // day view: a narrow column with the next day on the right
 };
 
 // Tap target of a drawn event (day view), for the detail screen.
@@ -27,7 +27,7 @@ struct HitBox {
   const CalEvent* event;  // nullptr: the peek column of the next working day
 };
 
-// The day the day view peeks at: the next day, skipping Saturday and Sunday.
+// The day the day view peeks at: the next day (Friday shows Saturday).
 Date peekDay(Date day);
 
 // Header band shared by all views. Returns the y below it.
