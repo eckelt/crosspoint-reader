@@ -24,6 +24,8 @@ struct CalendarState {
   int64_t lastWifiEpoch = 0;   // last Wi-Fi fallback attempt (rate limit for timer wakes)
   int64_t lastAttemptEpoch = 0;  // last sync attempt, successful or not
   uint8_t lastVia = 0;           // how the last successful sync came: 0 unknown, 1 Bluetooth, 2 Wi-Fi
+  // Wi-Fi of the last attempt: 0 not tried, -1 no known network, -2 no answer, else the HTTP status.
+  int16_t lastWifiResult = 0;
 };
 
 // What a running sync is doing, for the calendar header.

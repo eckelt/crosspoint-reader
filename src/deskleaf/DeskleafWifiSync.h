@@ -21,6 +21,9 @@ bool join(AbortCheck shouldAbort);
 // into `body`. NewPayload on success, otherwise why not.
 SyncStatus fetchWeeks(const std::string& monday, int weeks, std::string& body);
 
+// HTTP status of the last fetchWeeks(), 0 when the worker never answered.
+int lastHttpStatus();
+
 // Disconnects and switches the radio off.
 void leave();
 

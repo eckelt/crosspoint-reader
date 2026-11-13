@@ -371,6 +371,7 @@ void CalendarActivity::render(RenderLock&&) {
   status.lastSyncEpoch = state.lastSyncEpoch;
   status.lastAttemptEpoch = state.lastAttemptEpoch;
   status.via = state.lastVia;
+  status.wifiResult = state.lastWifiResult;
   status.showNowLine = true;
   status.peekNextDay = true;
   if (syncing) {

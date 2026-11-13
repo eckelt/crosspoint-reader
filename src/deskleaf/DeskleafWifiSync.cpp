@@ -23,6 +23,7 @@ constexpr const char* kDefaultBase = "https://mcp.deskleaf.one";
 constexpr unsigned long kJoinTimeoutMs = 8000;
 constexpr int kMaxNetworks = 3;      // bounds the time spent when none is around
 constexpr size_t kMaxBody = 512 * 1024;  // a few weeks are tens of KB
+int g_lastHttp = 0;
 
 std::string trimmed(const std::string& s) {
   const size_t a = s.find_first_not_of(" \t\r\n");
@@ -109,6 +110,7 @@ SyncStatus fetchWeeks(const std::string& monday, const int weeks, std::string& b
         return true;
       },
       "", "", {{"Authorization", "Bearer " + token}});
+  g_lastHttp = HttpDownloader::lastStatus();
   if (tooLarge) return SyncStatus::OutOfMemory;
   if (!ok) {
     LOG_ERR("DSK", "Wi-Fi fallback: fetch failed (HTTP %d)", HttpDownloader::lastStatus());
@@ -117,6 +119,8 @@ SyncStatus fetchWeeks(const std::string& monday, const int weeks, std::string& b
   LOG_INF("DSK", "Wi-Fi fallback: %u bytes of week frames", static_cast<unsigned>(body.size()));
   return SyncStatus::NewPayload;
 }
+
+int lastHttpStatus() { return g_lastHttp; }
 
 void leave() {
   WiFi.disconnect(true);

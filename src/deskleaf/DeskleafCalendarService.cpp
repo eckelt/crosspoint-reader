@@ -358,6 +358,7 @@ view::Status viewStatus(const CalendarState& state) {
   s.lastSyncEpoch = state.lastSyncEpoch;
   s.lastAttemptEpoch = state.lastAttemptEpoch;
   s.via = state.lastVia;
+  s.wifiResult = state.lastWifiResult;
   return s;
 }
 
@@ -390,6 +391,7 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.lastWifiEpoch = doc["lastWifi"] | static_cast<int64_t>(0);
   state.lastAttemptEpoch = doc["lastAttempt"] | static_cast<int64_t>(0);
   state.lastVia = doc["lastVia"] | 0;
+  state.lastWifiResult = doc["lastWifiResult"] | 0;
   return true;
 }
 
@@ -431,6 +433,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["lastWifi"] = state.lastWifiEpoch;
   doc["lastAttempt"] = state.lastAttemptEpoch;
   doc["lastVia"] = state.lastVia;
+  doc["lastWifiResult"] = state.lastWifiResult;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -441,6 +444,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
                                  char* bridgeTzOut, const WifiFallback wifi) const {
   const PhaseScope phase;
   state.lastAttemptEpoch = static_cast<int64_t>(time(nullptr));
+  state.lastWifiResult = 0;
   const auto takeTimezone = [&](const char* tz) {
     if (!tz || !*tz) return;  // a failed connection sends none; keep what we have
     if (!bridgeTzOut) {
@@ -529,8 +533,11 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     std::string body;
     SyncStatus viaWifi = SyncStatus::BridgeNotFound;
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
+    state.lastWifiResult = -1;
     if (wifisync::join(shouldAbort)) {
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
+      const int http = wifisync::lastHttpStatus();
+      state.lastWifiResult = static_cast<int16_t>(http > 0 ? http : -2);
     }
     wifisync::leave();
     LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));

@@ -340,8 +340,13 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     const time_t t = static_cast<time_t>(status.lastAttemptEpoch);
     struct tm lt {};
     localtime_r(&t, &lt);
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d", lt.tm_hour, lt.tm_min);
+    // Why Wi-Fi did not step in, when it was tried: no known network, no answer, or the HTTP status.
+    char wifi[24] = "";
+    if (status.wifiResult == -1) std::snprintf(wifi, sizeof(wifi), " • kein WLAN");
+    if (status.wifiResult == -2) std::snprintf(wifi, sizeof(wifi), " • WLAN: keine Antwort");
+    if (status.wifiResult > 0) std::snprintf(wifi, sizeof(wifi), " • WLAN: %d", status.wifiResult);
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d%s", lt.tm_hour, lt.tm_min, wifi);
     const int tw = r.getTextWidth(SMALL_FONT_ID, buf);
     r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), buf, false);
   }
