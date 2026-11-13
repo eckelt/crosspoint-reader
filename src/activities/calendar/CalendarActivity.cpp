@@ -46,6 +46,7 @@ void CalendarActivity::startSync() {
   if (syncing) return;
   if (!deskleaf::bgsync::start(state)) return;
   syncing = true;
+  shownPhase = deskleaf::SyncPhase::Bluetooth;
   requestUpdate();
 }
 
@@ -172,7 +173,15 @@ void CalendarActivity::cycleView() {
 int CalendarActivity::contentTop() const { return headerHeight; }
 
 void CalendarActivity::loop() {
-  if (syncing) finishSync();
+  if (syncing) {
+    // Bluetooth, then maybe Wi-Fi: the header says which.
+    const deskleaf::SyncPhase phase = deskleaf::syncPhase();
+    if (phase != deskleaf::SyncPhase::Idle && phase != shownPhase) {
+      shownPhase = phase;
+      requestUpdate();
+    }
+    finishSync();
+  }
   if (syncPending) {
     syncPending = false;
     startSync();
@@ -360,10 +369,12 @@ void CalendarActivity::render(RenderLock&&) {
 
   view_ns::Status status;
   status.lastSyncEpoch = state.lastSyncEpoch;
+  status.lastAttemptEpoch = state.lastAttemptEpoch;
+  status.via = state.lastVia == 1 ? "BT" : state.lastVia == 2 ? "WLAN" : nullptr;
   status.showNowLine = true;
   status.peekNextDay = true;
   if (syncing) {
-    status.statusText = "Synchronisiere…";
+    status.statusText = shownPhase == deskleaf::SyncPhase::Wifi ? "WLAN…" : "Bluetooth…";
   } else if (state.lastStatus != static_cast<uint8_t>(deskleaf::SyncStatus::Unchanged) &&
              state.lastStatus != static_cast<uint8_t>(deskleaf::SyncStatus::NewPayload) && state.lastSyncEpoch == 0) {
     status.statusText = deskleaf::syncStatusText(static_cast<deskleaf::SyncStatus>(state.lastStatus));

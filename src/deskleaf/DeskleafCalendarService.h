@@ -22,7 +22,13 @@ struct CalendarState {
   uint8_t lastStatus = 0;      // SyncStatus of the last attempt
   std::string firmware;        // firmware at the last sync; a change is an install
   int64_t lastWifiEpoch = 0;   // last Wi-Fi fallback attempt (rate limit for timer wakes)
+  int64_t lastAttemptEpoch = 0;  // last sync attempt, successful or not
+  uint8_t lastVia = 0;           // how the last successful sync came: 0 unknown, 1 Bluetooth, 2 Wi-Fi
 };
+
+// What a running sync is doing, for the calendar header.
+enum class SyncPhase : uint8_t { Idle, Bluetooth, Wifi };
+SyncPhase syncPhase();
 
 // When a sync may fall back to Wi-Fi (DeskleafWifiSync.h) after missing the bridge.
 enum class WifiFallback : uint8_t {

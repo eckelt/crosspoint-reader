@@ -46,6 +46,7 @@ class CalendarActivity final : public Activity {
   deskleaf::Date loadedFirst{2026, 1, 1};
   deskleaf::Date loadedLast{2026, 1, 1};
   bool syncing = false;
+  deskleaf::SyncPhase shownPhase = deskleaf::SyncPhase::Bluetooth;
   bool syncPending = false;
 
   int headerHeight = 0;

@@ -346,13 +346,24 @@ uint32_t screenHash(const std::vector<CalEvent>& events, const Date today) {
          fnv1a(reinterpret_cast<const uint8_t*>(iso.data()), iso.size());
 }
 
+std::atomic<uint8_t> g_phase{0};
+
+struct PhaseScope {
+  PhaseScope() { g_phase = static_cast<uint8_t>(SyncPhase::Bluetooth); }
+  ~PhaseScope() { g_phase = static_cast<uint8_t>(SyncPhase::Idle); }
+};
+
 view::Status viewStatus(const CalendarState& state) {
   view::Status s;
   s.lastSyncEpoch = state.lastSyncEpoch;
+  s.lastAttemptEpoch = state.lastAttemptEpoch;
+  s.via = state.lastVia == 1 ? "BT" : state.lastVia == 2 ? "WLAN" : nullptr;
   return s;
 }
 
 }  // namespace
+
+SyncPhase syncPhase() { return static_cast<SyncPhase>(g_phase.load()); }
 
 bool localToday(Date& out, struct tm* tmOut) {
   const time_t now = time(nullptr);
@@ -377,6 +388,8 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.lastStatus = doc["lastStatus"] | 0;
   state.firmware = doc["firmware"] | "";
   state.lastWifiEpoch = doc["lastWifi"] | static_cast<int64_t>(0);
+  state.lastAttemptEpoch = doc["lastAttempt"] | static_cast<int64_t>(0);
+  state.lastVia = doc["lastVia"] | 0;
   return true;
 }
 
@@ -416,6 +429,8 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["lastStatus"] = state.lastStatus;
   doc["firmware"] = state.firmware;
   doc["lastWifi"] = state.lastWifiEpoch;
+  doc["lastAttempt"] = state.lastAttemptEpoch;
+  doc["lastVia"] = state.lastVia;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -424,6 +439,8 @@ bool CalendarService::saveState(const CalendarState& state) const {
 
 SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortCheck shouldAbort,
                                  char* bridgeTzOut, const WifiFallback wifi) const {
+  const PhaseScope phase;
+  state.lastAttemptEpoch = static_cast<int64_t>(time(nullptr));
   const auto takeTimezone = [&](const char* tz) {
     if (!tz || !*tz) return;  // a failed connection sends none; keep what we have
     if (!bridgeTzOut) {
@@ -511,6 +528,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     state.lastWifiEpoch = now;
     std::string body;
     SyncStatus viaWifi = SyncStatus::BridgeNotFound;
+    g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
     if (wifisync::join(shouldAbort)) {
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
     }
@@ -524,6 +542,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       if (forceRedraw) *forceRedraw = true;
       if (viaWifi == SyncStatus::NewPayload) {
         state.lastSyncEpoch = now;
+        state.lastVia = 2;
         state.payloadHash = weekSetHash(windowOf(today, index));
         state.lastStatus = static_cast<uint8_t>(viaWifi);
         saveState(state);
@@ -541,6 +560,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   if (r.status == SyncStatus::NewPayload || r.status == SyncStatus::Unchanged) {
     state.lastSyncEpoch = static_cast<int64_t>(time(nullptr));
+    state.lastVia = 1;
   }
   state.payloadHash = weekSetHash(windowOf(today, index));
   state.lastStatus = static_cast<uint8_t>(r.status);

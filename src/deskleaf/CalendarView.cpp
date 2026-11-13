@@ -318,13 +318,24 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     const time_t t = static_cast<time_t>(status.lastSyncEpoch);
     struct tm lt {};
     localtime_r(&t, &lt);
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "Stand %02d:%02d", lt.tm_hour, lt.tm_min);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), status.via ? "Stand %02d:%02d · %s" : "Stand %02d:%02d", lt.tm_hour, lt.tm_min,
+                  status.via);
     right = buf;
   }
   if (!right.empty()) {
     const int tw = r.getTextWidth(SMALL_FONT_ID, right.c_str());
     r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10, right.c_str(), false);
+  }
+  // A later attempt that brought nothing: when the device last tried.
+  if (!status.statusText && status.lastAttemptEpoch > status.lastSyncEpoch + 60) {
+    const time_t t = static_cast<time_t>(status.lastAttemptEpoch);
+    struct tm lt {};
+    localtime_r(&t, &lt);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d", lt.tm_hour, lt.tm_min);
+    const int tw = r.getTextWidth(SMALL_FONT_ID, buf);
+    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), buf, false);
   }
   return h;
 }
