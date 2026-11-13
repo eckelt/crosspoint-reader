@@ -24,7 +24,7 @@ struct Status {
 // Tap target of a drawn event (day view), for the detail screen.
 struct HitBox {
   int x, y, w, h;
-  const CalEvent* event;  // nullptr: the peek column of the next working day
+  const CalEvent* event;  // nullptr: the peek column of the next day
 };
 
 // The day the day view peeks at: the next day (Friday shows Saturday).

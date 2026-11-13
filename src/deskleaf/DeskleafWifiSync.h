@@ -1,7 +1,7 @@
 #pragma once
 // Wi-Fi fallback for the calendar sync: when the Mac bridge is out of reach,
 // join a saved network and fetch the same week frames from the Deskleaf worker
-// (GET /display/weeks). Needs /.crosspoint/deskleaf-feed.txt on the SD card:
+// (GET /display/weeks). Needs deskleaf-feed.txt in the SD root (or in /.crosspoint):
 // the feed token on the first line, optionally the worker's base URL on the
 // second (default https://mcp.deskleaf.one).
 #include <string>

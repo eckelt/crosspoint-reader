@@ -17,7 +17,8 @@
 
 namespace deskleaf::wifisync {
 namespace {
-constexpr const char* kConfigPath = "/.crosspoint/deskleaf-feed.txt";
+// The web file manager hides dot folders, so the file may also sit in the SD root.
+constexpr const char* kConfigPaths[] = {"/deskleaf-feed.txt", "/.crosspoint/deskleaf-feed.txt"};
 constexpr const char* kDefaultBase = "https://mcp.deskleaf.one";
 constexpr unsigned long kJoinTimeoutMs = 8000;
 constexpr int kMaxNetworks = 3;      // bounds the time spent when none is around
@@ -31,8 +32,15 @@ std::string trimmed(const std::string& s) {
 }
 
 bool readConfig(std::string& token, std::string& base) {
-  if (!Storage.exists(kConfigPath)) return false;
-  const String raw = Storage.readFile(kConfigPath);
+  const char* path = nullptr;
+  for (const char* candidate : kConfigPaths) {
+    if (Storage.exists(candidate)) {
+      path = candidate;
+      break;
+    }
+  }
+  if (!path) return false;
+  const String raw = Storage.readFile(path);
   const std::string text(raw.c_str());
   const size_t nl = text.find('\n');
   token = trimmed(text.substr(0, nl));
