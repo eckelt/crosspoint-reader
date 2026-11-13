@@ -21,6 +21,14 @@ struct CalendarState {
   int64_t lastSyncEpoch = 0;   // last successful contact with the bridge
   uint8_t lastStatus = 0;      // SyncStatus of the last attempt
   std::string firmware;        // firmware at the last sync; a change is an install
+  int64_t lastWifiEpoch = 0;   // last Wi-Fi fallback attempt (rate limit for timer wakes)
+};
+
+// When a sync may fall back to Wi-Fi (DeskleafWifiSync.h) after missing the bridge.
+enum class WifiFallback : uint8_t {
+  Never,
+  Hourly,  // timer wakes: at most one attempt per hour
+  Now,     // the user asked: open calendar, long press
 };
 
 class CalendarService {
@@ -38,7 +46,7 @@ class CalendarService {
   // and the transfer. The bridge's timezone is adopted right away, or copied
   // to bridgeTzOut (64 bytes) for a caller that applies it on another task.
   SyncStatus sync(CalendarState& state, bool* forceRedraw = nullptr, AbortCheck shouldAbort = nullptr,
-                  char* bridgeTzOut = nullptr) const;
+                  char* bridgeTzOut = nullptr, WifiFallback wifi = WifiFallback::Never) const;
 
   // Sleep screen: draws today's view into the framebuffer and refreshes the panel.
   void renderSleepScreen(GfxRenderer& renderer) const;

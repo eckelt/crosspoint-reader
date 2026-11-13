@@ -24,6 +24,7 @@
 #include <memory>
 
 #include "CalendarView.h"
+#include "DeskleafWifiSync.h"
 #include "CrossPointSettings.h"
 #include "util/TaskWatchdog.h"
 #include "util/Timezones.h"
@@ -53,6 +54,15 @@ constexpr size_t kMaxActivities = 500;
 constexpr size_t kMaxFile = 2 * 1024 * 1024;  // a week, the state or the legacy payload (PSRAM)
 // First refresh after the reader goes to sleep; later ones follow the schedule.
 constexpr uint32_t kFirstWakeMinutes = 2;
+// Wi-Fi fallback (DeskleafWifiSync.h): at most hourly from timer wakes, last week to two weeks ahead.
+constexpr int64_t kWifiFallbackIntervalSec = 60 * 60;
+constexpr int kWifiWeeksBack = 1;
+constexpr int kWifiWeeks = 4;
+
+// The Monday `weeksOffset` weeks from today's week, as "YYYY-MM-DD".
+std::string mondayIso(const Date today, const int weeksOffset) {
+  return isoString(addDays(mondayOf(today), 7 * weeksOffset));
+}
 
 struct PsFree {
   void operator()(char* p) const { free(p); }
@@ -366,6 +376,7 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.lastSyncEpoch = doc["lastSync"] | static_cast<int64_t>(0);
   state.lastStatus = doc["lastStatus"] | 0;
   state.firmware = doc["firmware"] | "";
+  state.lastWifiEpoch = doc["lastWifi"] | static_cast<int64_t>(0);
   return true;
 }
 
@@ -404,6 +415,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["lastSync"] = state.lastSyncEpoch;
   doc["lastStatus"] = state.lastStatus;
   doc["firmware"] = state.firmware;
+  doc["lastWifi"] = state.lastWifiEpoch;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -411,7 +423,7 @@ bool CalendarService::saveState(const CalendarState& state) const {
 }
 
 SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortCheck shouldAbort,
-                                 char* bridgeTzOut) const {
+                                 char* bridgeTzOut, const WifiFallback wifi) const {
   const auto takeTimezone = [&](const char* tz) {
     if (!tz || !*tz) return;  // a failed connection sends none; keep what we have
     if (!bridgeTzOut) {
@@ -488,6 +500,37 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   takeTimezone(r.bridgeTz);
   if (r.status == SyncStatus::BridgeNotFound) noteActivity(ActivityType::BridgeUnavailable);
+
+  // No bridge: the same week frames over Wi-Fi from the Deskleaf worker, for the
+  // weeks around today. The bridge resends any week that differs next time.
+  const int64_t now = static_cast<int64_t>(time(nullptr));
+  const bool bridgeMissing = r.status == SyncStatus::BridgeNotFound || r.status == SyncStatus::ConnectFailed;
+  const bool wifiDue = wifi == WifiFallback::Now ||
+                       (wifi == WifiFallback::Hourly && now - state.lastWifiEpoch >= kWifiFallbackIntervalSec);
+  if (bridgeMissing && wifiDue && wifisync::configured()) {
+    state.lastWifiEpoch = now;
+    std::string body;
+    SyncStatus viaWifi = SyncStatus::BridgeNotFound;
+    if (wifisync::join(shouldAbort)) {
+      viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
+    }
+    wifisync::leave();
+    LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));
+    if (viaWifi == SyncStatus::NewPayload) {
+      if (!applyWeekFrames(body.data(), body.size(), window, index)) viaWifi = SyncStatus::StoreFailed;
+      freePayload(r);
+      r = SyncResult{};
+      r.status = viaWifi;
+      if (forceRedraw) *forceRedraw = true;
+      if (viaWifi == SyncStatus::NewPayload) {
+        state.lastSyncEpoch = now;
+        state.payloadHash = weekSetHash(windowOf(today, index));
+        state.lastStatus = static_cast<uint8_t>(viaWifi);
+        saveState(state);
+        return viaWifi;
+      }
+    }
+  }
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
     if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
@@ -530,7 +573,7 @@ bool CalendarService::backgroundRefresh(GfxRenderer& renderer, const AbortCheck 
   CalendarState state;
   loadState(state);
   bool force = false;
-  if (sync(state, &force, shouldAbort) == SyncStatus::Aborted) return false;
+  if (sync(state, &force, shouldAbort, nullptr, WifiFallback::Hourly) == SyncStatus::Aborted) return false;
   Date today{};
   if (!localToday(today)) return true;
   std::vector<CalEvent> events;
@@ -562,9 +605,10 @@ void CalendarService::armWakeTimer(const bool firstAfterSleep) const {
 namespace bgsync {
 namespace {
 // NimBLE client calls block on semaphores while the host task does the work;
-// the body sits in PSRAM and each week's JSON document on the heap. 8 KB is unmeasured: the worker logs its
-// stack high-water mark after every sync.
-constexpr uint32_t kStackBytes = 8192;
+// the body sits in PSRAM and each week's JSON document on the heap. The Wi-Fi
+// fallback adds a TLS handshake on this stack, hence 16 KB (unmeasured: the
+// worker logs its stack high-water mark after every sync).
+constexpr uint32_t kStackBytes = 16384;
 
 // Owned by the worker between start() and `done`; by the loop task otherwise.
 struct Job {
@@ -578,7 +622,8 @@ std::atomic<bool> abortFlag{false};
 
 void worker(void* param) {
   auto* j = static_cast<Job*>(param);
-  j->status = CALENDAR.sync(j->state, nullptr, [] { return abortFlag.load(); }, j->bridgeTz);
+  // The user is looking: without the bridge, go to Wi-Fi right away.
+  j->status = CALENDAR.sync(j->state, nullptr, [] { return abortFlag.load(); }, j->bridgeTz, WifiFallback::Now);
   LOG_DBG("DSK", "Sync task stack free: %u bytes", static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
   done = true;  // the worker touches nothing after this
   vTaskDelete(nullptr);
