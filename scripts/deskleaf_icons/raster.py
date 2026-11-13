@@ -16,7 +16,6 @@ ICONS = {
     'pin': ('kOnSite', 19), 'phone': ('kPhone', 17), 'series': ('kSeries', 18),
     'series_moved': ('kSeriesMoved', 18), 'attachment': ('kAttachment', 18),
     'zoom': ('kZoom', 18), 'webex': ('kWebex', 18),
-    'bluetooth': ('kBluetooth', 17), 'wifi': ('kWifi', 17),
 }
 
 for name, (cname, size) in ICONS.items():
@@ -38,5 +37,19 @@ for name, (cname, size) in ICONS.items():
     for y in range(N):
         bits = ''.join('1' if box.getpixel((x, y)) > 110 else '0' for x in range(N)) + '0000'
         v = int(bits, 2)
+        data += [v >> 16 & 255, v >> 8 & 255, v & 255]
+    print(f'inline constexpr unsigned char {cname}[] = {{{", ".join("0x%02X" % b for b in data)}}};')
+
+# Header: a sync running over Bluetooth or Wi-Fi, 24x24, the whole viewBox
+# scaled (no crop), so ring and symbol keep their drawn proportions.
+for name, cname in (('sync_bluetooth', 'kSyncBluetooth'), ('sync_wifi', 'kSyncWifi')):
+    S = 24
+    png = subprocess.run(['rsvg-convert', '-w', str(S * 8), '-h', str(S * 8), os.path.join(HERE, name + '.svg')],
+                         capture_output=True, check=True).stdout
+    rgba = Image.open(io.BytesIO(png)).convert('RGBA')
+    alpha = rgba.split()[3].resize((S, S), Image.LANCZOS)
+    data = []
+    for y in range(S):
+        v = int(''.join('1' if alpha.getpixel((x, y)) > 100 else '0' for x in range(S)), 2)
         data += [v >> 16 & 255, v >> 8 & 255, v & 255]
     print(f'inline constexpr unsigned char {cname}[] = {{{", ".join("0x%02X" % b for b in data)}}};')

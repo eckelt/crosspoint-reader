@@ -318,27 +318,18 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     const time_t t = static_cast<time_t>(status.lastSyncEpoch);
     struct tm lt {};
     localtime_r(&t, &lt);
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "Stand %02d:%02d", lt.tm_hour, lt.tm_min);
+    char buf[32];
+    const char* via = status.via == 1 ? " • BT" : status.via == 2 ? " • WLAN" : "";
+    std::snprintf(buf, sizeof(buf), "Stand %02d:%02d%s", lt.tm_hour, lt.tm_min, via);
     right = buf;
   }
-  // Right edge: a running sync as a white chip with its radio (Bluetooth or
-  // Wi-Fi); otherwise the radio the shown data came over, plain on black.
+  // A running sync: its radio inside circling arrows, left of the sync time.
   int textRight = w - kMargin - 4;
-  const unsigned char* radioIcon = nullptr;
-  const uint8_t radio = status.active ? status.active : status.via;
-  if (radio == 1) radioIcon = icons::kBluetooth;
-  if (radio == 2) radioIcon = icons::kWifi;
-  if (radioIcon) {
-    const int box = icons::kSize + 6;
-    const int bx = textRight - box;
-    if (status.active) {
-      r.fillRoundedRect(bx, 6, box, box, 5, Color::White);
-      drawIcon(r, radioIcon, icons::kSize, icons::kSize, bx + 3, 9, 1, true);
-    } else {
-      drawIcon(r, radioIcon, icons::kSize, icons::kSize, bx + 3, 9, 1, false);
-    }
-    textRight = bx - 4;
+  if (status.active) {
+    constexpr int kSyncIcon = 24;
+    const unsigned char* icon = status.active == 2 ? icons::kSyncWifi : icons::kSyncBluetooth;
+    drawIcon(r, icon, kSyncIcon, kSyncIcon, textRight - kSyncIcon, 6, 1, false);
+    textRight -= kSyncIcon + 6;
   }
   if (!right.empty()) {
     const int tw = r.getTextWidth(SMALL_FONT_ID, right.c_str());
