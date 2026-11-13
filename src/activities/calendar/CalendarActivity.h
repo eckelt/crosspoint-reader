@@ -21,6 +21,8 @@ class CalendarActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override { return syncing; }
+  // A last-frame sleep would skip the calendar sleep screen and its timer syncs.
+  bool bypassesQuickResume() const override { return true; }
 
  private:
   enum class View : uint8_t { Day, Week, Month, Popup, Detail };

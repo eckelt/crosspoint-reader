@@ -49,6 +49,8 @@ class Activity {
   // transitions so no filesystem code races a raw SD-card owner.
   virtual bool requiresExclusiveStorageLoop() const { return false; }
   virtual bool isReaderActivity() const { return false; }
+  // Sleeping here shows the screen's own sleep view, never Quick Resume's last frame.
+  virtual bool bypassesQuickResume() const { return false; }
   virtual bool acceptsRemoteInput() const { return false; }
   // Returns true when the activity schedules its own forced refresh.
   virtual bool handleForcedRefresh() { return false; }

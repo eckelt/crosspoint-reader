@@ -420,6 +420,10 @@ bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();
 }
 
+bool ActivityManager::foregroundBypassesQuickResume() const {
+  return currentActivity && currentActivity->bypassesQuickResume();
+}
+
 bool ActivityManager::isReaderActivity() const {
   return std::any_of(stackActivities.begin(), stackActivities.end(),
                      [](const auto& activity) { return activity->isReaderActivity(); }) ||

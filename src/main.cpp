@@ -472,6 +472,9 @@ static bool holdSleepWhileUsbPowered() {
 // Enter deep sleep mode
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
+  // Quick Resume after a timeout keeps the last frame; the calendar app sleeps
+  // into its own sleep screen instead, whose wake timer keeps the day current.
+  if (activityManager.foregroundBypassesQuickResume()) fromTimeout = false;
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
 
   // Sleep may end in a power-off (battery death, latch); persist the clock
