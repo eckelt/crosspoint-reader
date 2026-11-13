@@ -86,7 +86,7 @@ bool join(const AbortCheck shouldAbort) {
 SyncStatus fetchWeeks(const std::string& monday, const int weeks, std::string& body) {
   std::string token, base;
   if (!readConfig(token, base)) return SyncStatus::BridgeNotFound;
-  std::string url = base + "/einkal/weeks?weeks=" + std::to_string(weeks);
+  std::string url = base + "/display/weeks?weeks=" + std::to_string(weeks);
   if (!monday.empty()) url += "&monday=" + monday;
   body.clear();
   bool tooLarge = false;

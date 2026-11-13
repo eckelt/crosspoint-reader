@@ -318,17 +318,34 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     const time_t t = static_cast<time_t>(status.lastSyncEpoch);
     struct tm lt {};
     localtime_r(&t, &lt);
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), status.via ? "Stand %02d:%02d · %s" : "Stand %02d:%02d", lt.tm_hour, lt.tm_min,
-                  status.via);
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "Stand %02d:%02d", lt.tm_hour, lt.tm_min);
     right = buf;
+  }
+  // Right edge: a running sync as a white chip with its radio (Bluetooth or
+  // Wi-Fi); otherwise the radio the shown data came over, plain on black.
+  int textRight = w - kMargin - 4;
+  const unsigned char* radioIcon = nullptr;
+  const uint8_t radio = status.active ? status.active : status.via;
+  if (radio == 1) radioIcon = icons::kBluetooth;
+  if (radio == 2) radioIcon = icons::kWifi;
+  if (radioIcon) {
+    const int box = icons::kSize + 6;
+    const int bx = textRight - box;
+    if (status.active) {
+      r.fillRoundedRect(bx, 6, box, box, 5, Color::White);
+      drawIcon(r, radioIcon, icons::kSize, icons::kSize, bx + 3, 9, 1, true);
+    } else {
+      drawIcon(r, radioIcon, icons::kSize, icons::kSize, bx + 3, 9, 1, false);
+    }
+    textRight = bx - 4;
   }
   if (!right.empty()) {
     const int tw = r.getTextWidth(SMALL_FONT_ID, right.c_str());
-    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10, right.c_str(), false);
+    r.drawText(SMALL_FONT_ID, textRight - tw, 10, right.c_str(), false);
   }
   // A later attempt that brought nothing: when the device last tried.
-  if (!status.statusText && status.lastAttemptEpoch > status.lastSyncEpoch + 60) {
+  if (!status.statusText && !status.active && status.lastAttemptEpoch > status.lastSyncEpoch + 60) {
     const time_t t = static_cast<time_t>(status.lastAttemptEpoch);
     struct tm lt {};
     localtime_r(&t, &lt);

@@ -14,7 +14,8 @@ namespace deskleaf::view {
 struct Status {
   int64_t lastSyncEpoch = 0;
   const char* statusText = nullptr;  // e.g. "Synchronisiere…"; nullptr = none
-  const char* via = nullptr;         // "BT" or "WLAN": how the shown data arrived
+  uint8_t via = 0;                   // how the shown data arrived: 0 unknown, 1 Bluetooth, 2 Wi-Fi
+  uint8_t active = 0;                // a sync running now over: 0 none, 1 Bluetooth, 2 Wi-Fi
   int64_t lastAttemptEpoch = 0;      // a later failed attempt is shown below the sync time
   bool showNowLine = false;          // interactive view only; the sleep screen would go stale
   bool peekNextDay = false;          // day view: a narrow column with the next working day on the right

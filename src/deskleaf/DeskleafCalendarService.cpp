@@ -357,7 +357,7 @@ view::Status viewStatus(const CalendarState& state) {
   view::Status s;
   s.lastSyncEpoch = state.lastSyncEpoch;
   s.lastAttemptEpoch = state.lastAttemptEpoch;
-  s.via = state.lastVia == 1 ? "BT" : state.lastVia == 2 ? "WLAN" : nullptr;
+  s.via = state.lastVia;
   return s;
 }
 

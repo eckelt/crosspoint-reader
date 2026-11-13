@@ -16,6 +16,7 @@ ICONS = {
     'pin': ('kOnSite', 19), 'phone': ('kPhone', 17), 'series': ('kSeries', 18),
     'series_moved': ('kSeriesMoved', 18), 'attachment': ('kAttachment', 18),
     'zoom': ('kZoom', 18), 'webex': ('kWebex', 18),
+    'bluetooth': ('kBluetooth', 17), 'wifi': ('kWifi', 17),
 }
 
 for name, (cname, size) in ICONS.items():
