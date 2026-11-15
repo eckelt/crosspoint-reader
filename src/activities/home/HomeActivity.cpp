@@ -35,7 +35,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 3;  // Calendar, Clicker, QR codes
+    count += 2;  // Calendar, Tools
   }
   return count;
 }
@@ -333,11 +333,8 @@ void HomeActivity::loop() {
       case HomeMenuItem::CALENDAR:
         onCalendarOpen();
         break;
-      case HomeMenuItem::CLICKER:
-        onClickerOpen();
-        break;
-      case HomeMenuItem::QR_CODES:
-        onQrCodesOpen();
+      case HomeMenuItem::TOOLS:
+        onToolsOpen();
         break;
       default:
         break;
@@ -548,10 +545,8 @@ void HomeActivity::render(RenderLock&&) {
   if (hasCalendarSlot()) {
     menuItems.push_back(tr(STR_CALENDAR));
     menuIcons.push_back(Recent);
-    menuItems.push_back("Klicker");
+    menuItems.push_back("Werkzeuge");
     menuIcons.push_back(Transfer);
-    menuItems.push_back("QR-Codes");
-    menuIcons.push_back(Image);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -606,14 +601,8 @@ void HomeActivity::onCalendarOpen() {
 #endif
 }
 
-void HomeActivity::onClickerOpen() {
+void HomeActivity::onToolsOpen() {
 #if DESKLEAF_CALENDAR
-  activityManager.goToClicker();
-#endif
-}
-
-void HomeActivity::onQrCodesOpen() {
-#if DESKLEAF_CALENDAR
-  activityManager.goToQrCodes();
+  activityManager.goToTools();
 #endif
 }

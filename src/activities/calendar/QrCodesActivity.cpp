@@ -11,6 +11,7 @@
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "deskleaf/EventIcons.h"
+#include "deskleaf/QrSleep.h"
 #include "fontIds.h"
 #include "util/QrUtils.h"
 
@@ -146,6 +147,8 @@ void QrCodesActivity::finishEdit() {
   draft.description = field(draft.description);
   draft.link = field(draft.link);
   const bool adding = onAddPage();
+  const bool wasPinned = !adding && deskleaf::qrsleep::pinnedLink() == entries[index].link;
+  if (wasPinned) deskleaf::qrsleep::unpin();
   if (draft.link.empty()) {
     if (!adding) entries.erase(entries.begin() + index);  // no link: the code goes
   } else {
@@ -156,6 +159,7 @@ void QrCodesActivity::finishEdit() {
       entries[index] = draft;
     }
   }
+  if (wasPinned && !draft.link.empty()) deskleaf::qrsleep::pin(draft.title, draft.description, draft.link);
   if (index > static_cast<int>(entries.size())) index = static_cast<int>(entries.size());
   save();
   requestUpdate();
@@ -185,7 +189,20 @@ void QrCodesActivity::loop() {
   }
   using B = MappedInputManager::Button;
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
-    onGoHome(HomeMenuItem::QR_CODES);
+    activityManager.goToTools();  // back to the Werkzeuge list
+    return;
+  }
+  // Long press: this code becomes the sleep screen, or stops being it.
+  int lx = 0, ly = 0;
+  if (!onAddPage() && (mappedInput.wasLongPressed(B::Confirm, 800) ||
+                       (mappedInput.hasTouch() && mappedInput.wasScreenLongPress(lx, ly)))) {
+    const Entry& e = entries[index];
+    if (deskleaf::qrsleep::pinnedLink() == e.link) {
+      deskleaf::qrsleep::unpin();
+    } else {
+      deskleaf::qrsleep::pin(e.title, e.description, e.link);
+    }
+    requestUpdate();
     return;
   }
   if (mappedInput.wasReleased(B::Confirm)) {
@@ -232,6 +249,13 @@ void QrCodesActivity::render(RenderLock&&) {
     const Entry& e = entries[index];
     // Pencil in the top right corner: edit this code.
     drawPencil(renderer, w - 12 - kIconSize, 14);
+    // Pinned as the sleep screen: a black badge top left.
+    if (deskleaf::qrsleep::pinnedLink() == e.link) {
+      const char* badge = "Schlafbild";
+      const int bw = renderer.getTextWidth(SMALL_FONT_ID, badge, EpdFontFamily::BOLD) + 12;
+      renderer.fillRoundedRect(10, 12, bw, renderer.getLineHeight(SMALL_FONT_ID) + 6, 4, Color::Black);
+      renderer.drawText(SMALL_FONT_ID, 16, 15, badge, false, EpdFontFamily::BOLD);
+    }
     int y = 24;
     // Title in its own case, up to two lines.
     for (const std::string& line : renderer.wrappedText(UI_12_FONT_ID, e.title.c_str(), w - 2 * margin, 2,

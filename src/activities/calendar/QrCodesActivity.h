@@ -1,7 +1,8 @@
 #pragma once
 // QR codes to show people: ecke.lt, a profile, the current slides. Each page
 // is one code with its title and where it leads; Left/Right or a swipe pages,
-// Back leaves. Confirm or the pencil edits a code (title, description, link;
+// Back leaves. A long press pins the code as the sleep screen. Confirm or the
+// pencil edits a code (title, description, link;
 // an empty link deletes it); the page after the last adds one. The list is
 // /qr-codes.txt on the SD card ("Title | Link" or "Title | Description | Link"
 // per line), created with examples on first use.

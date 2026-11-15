@@ -30,6 +30,7 @@
 #include "calendar/CalendarActivity.h"
 #include "calendar/ClickerActivity.h"
 #include "calendar/QrCodesActivity.h"
+#include "calendar/ToolsActivity.h"
 #include "deskleaf/DeskleafCalendarService.h"
 #endif
 #include "reader/ReaderActivity.h"
@@ -334,6 +335,7 @@ void ActivityManager::goToBrowser() {
 void ActivityManager::goToCalendar() { replaceActivity(std::make_unique<CalendarActivity>(renderer, mappedInput)); }
 void ActivityManager::goToClicker() { replaceActivity(std::make_unique<ClickerActivity>(renderer, mappedInput)); }
 void ActivityManager::goToQrCodes() { replaceActivity(std::make_unique<QrCodesActivity>(renderer, mappedInput)); }
+void ActivityManager::goToTools() { replaceActivity(std::make_unique<ToolsActivity>(renderer, mappedInput)); }
 #endif
 
 void ActivityManager::goToPlugins(bool showOpds) {

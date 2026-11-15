@@ -2,6 +2,7 @@
 #include <esp_sleep.h>
 
 #include "deskleaf/DeskleafCalendarService.h"
+#include "deskleaf/QrSleep.h"
 #endif
 #include <Arduino.h>
 #include <BlePageTurner.h>
@@ -533,7 +534,9 @@ void enterDeepSleep(bool fromTimeout = false) {
 
 #if DESKLEAF_CALENDAR
   // Quick Resume shows the page instead of the calendar; nothing to refresh then.
-  if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR && !isQuickResumeSleep) {
+  // A pinned QR code sleeps without wakes: a calendar refresh would draw over it.
+  if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR && !isQuickResumeSleep &&
+      !deskleaf::qrsleep::active()) {
     deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/true);
   }
 #endif
@@ -733,7 +736,7 @@ void setup() {
 #if DESKLEAF_CALENDAR
   // Before the frontlight restore: a background refresh must stay dark.
   if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER &&
-      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+      SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR && !deskleaf::qrsleep::active()) {
     runCalendarTimerWake();
   }
 #endif
@@ -759,7 +762,7 @@ void setup() {
         LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
         Storage.prepareForDeepSleep();
 #if DESKLEAF_CALENDAR
-        if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+        if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR && !deskleaf::qrsleep::active()) {
           deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/false);
         }
 #endif

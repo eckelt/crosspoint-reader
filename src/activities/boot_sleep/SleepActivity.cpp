@@ -2,6 +2,7 @@
 
 #if DESKLEAF_CALENDAR
 #include "deskleaf/DeskleafCalendarService.h"
+#include "deskleaf/QrSleep.h"
 #endif
 
 #include <BitmapHelpers.h>
@@ -733,6 +734,8 @@ void SleepActivity::onEnter() {
 
 #if DESKLEAF_CALENDAR
   if (sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::CALENDAR) {
+    // A QR code pinned in the QR-Codes app replaces the calendar for now.
+    if (deskleaf::qrsleep::active()) return deskleaf::qrsleep::render(renderer);
     // Draws from the stored payload; the timer wake fetches fresh data.
     return deskleaf::CALENDAR.renderSleepScreen(renderer);
   }
