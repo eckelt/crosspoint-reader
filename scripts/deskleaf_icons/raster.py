@@ -15,7 +15,7 @@ ICONS = {
     'teams': ('kTeams', 18), 'meet': ('kMeet', 20), 'ne': ('kNE', 18), 'linkedin': ('kLinkedIn', 16),
     'pin': ('kOnSite', 19), 'phone': ('kPhone', 17), 'series': ('kSeries', 18),
     'series_moved': ('kSeriesMoved', 18), 'attachment': ('kAttachment', 18),
-    'zoom': ('kZoom', 18), 'webex': ('kWebex', 18),
+    'zoom': ('kZoom', 18), 'webex': ('kWebex', 18), 'edit': ('kEdit', 18),
 }
 
 for name, (cname, size) in ICONS.items():
