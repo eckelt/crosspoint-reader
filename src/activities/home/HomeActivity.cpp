@@ -35,7 +35,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 2;  // Calendar, Clicker
+    count += 3;  // Calendar, Clicker, QR codes
   }
   return count;
 }
@@ -336,6 +336,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::CLICKER:
         onClickerOpen();
         break;
+      case HomeMenuItem::QR_CODES:
+        onQrCodesOpen();
+        break;
       default:
         break;
     }
@@ -547,6 +550,8 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.push_back(Recent);
     menuItems.push_back("Klicker");
     menuIcons.push_back(Transfer);
+    menuItems.push_back("QR-Codes");
+    menuIcons.push_back(Image);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -604,5 +609,11 @@ void HomeActivity::onCalendarOpen() {
 void HomeActivity::onClickerOpen() {
 #if DESKLEAF_CALENDAR
   activityManager.goToClicker();
+#endif
+}
+
+void HomeActivity::onQrCodesOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToQrCodes();
 #endif
 }

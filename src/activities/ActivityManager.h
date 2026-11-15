@@ -18,7 +18,7 @@
 class Activity;    // forward declaration
 class RenderLock;  // forward declaration
 
-enum class HomeMenuItem { NONE, FILE_BROWSER, LIBRARY, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU, CALENDAR, CLICKER };
+enum class HomeMenuItem { NONE, FILE_BROWSER, LIBRARY, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU, CALENDAR, CLICKER, QR_CODES };
 
 /**
  * ActivityManager
@@ -96,6 +96,7 @@ class ActivityManager {
 #if DESKLEAF_CALENDAR
   void goToCalendar();
   void goToClicker();
+  void goToQrCodes();
 #endif
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
   void goToSleep(bool fromTimeout = false);
