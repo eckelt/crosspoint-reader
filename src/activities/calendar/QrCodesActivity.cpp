@@ -189,7 +189,7 @@ void QrCodesActivity::loop() {
   }
   using B = MappedInputManager::Button;
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
-    activityManager.goToTools();  // back to the Apps springboard
+    onGoHome(HomeMenuItem::QR_CODES);
     return;
   }
   // Long press: this code becomes the sleep screen, or stops being it.

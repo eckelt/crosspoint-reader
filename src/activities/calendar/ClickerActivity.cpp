@@ -181,7 +181,7 @@ void ClickerActivity::trackPad() {
 void ClickerActivity::loop() {
   using B = MappedInputManager::Button;
   if (mappedInput.wasReleased(B::Back)) {
-    activityManager.goToTools();  // back to the Apps springboard
+    onGoHome(HomeMenuItem::CLICKER);
     return;
   }
   if (mappedInput.wasReleased(B::Right) || mappedInput.wasReleased(B::Down) ||

@@ -59,7 +59,9 @@ class HomeActivity final : public Activity {
     ++i;
     if (item == HomeMenuItem::CALENDAR) return i;
     ++i;
-    if (item == HomeMenuItem::TOOLS || item == HomeMenuItem::CLICKER || item == HomeMenuItem::QR_CODES) return i;
+    if (item == HomeMenuItem::CLICKER) return i;
+    ++i;
+    if (item == HomeMenuItem::QR_CODES) return i;
     return 0;
   }
 
@@ -73,7 +75,8 @@ class HomeActivity final : public Activity {
     if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
 #if DESKLEAF_CALENDAR
     if (idx == i++) return HomeMenuItem::CALENDAR;
-    if (idx == i) return HomeMenuItem::TOOLS;
+    if (idx == i++) return HomeMenuItem::CLICKER;
+    if (idx == i) return HomeMenuItem::QR_CODES;
 #endif
     return HomeMenuItem::NONE;
   }
@@ -85,7 +88,8 @@ class HomeActivity final : public Activity {
   void onOpdsBrowserOpen();
   void onPluginsOpen();
   void onCalendarOpen();
-  void onToolsOpen();
+  void onClickerOpen();
+  void onQrCodesOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image

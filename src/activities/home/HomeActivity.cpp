@@ -26,6 +26,94 @@
 #include "components/UITheme.h"
 #include "fontIds.h"
 
+#if DESKLEAF_CALENDAR
+#include "components/icons/blocks.h"
+#include "components/icons/book.h"
+#include "components/icons/deskleafHome.h"
+#include "components/icons/folder.h"
+#include "components/icons/library.h"
+#include "components/icons/settings2.h"
+#include "components/icons/transfer.h"
+
+namespace {
+// Deskleaf springboard: the Home menu as a grid of icon tiles below the cover.
+constexpr int kSpringColumns = 3;
+constexpr int kSpringGap = 10;
+constexpr int kSpringIcon = 32;
+constexpr int kSpringMaxTileH = 104;
+
+Rect springboardRect(const GfxRenderer& renderer, const Rect& content) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int top = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset + 8;
+  const int bottom = renderer.getScreenHeight() - metrics.buttonHintsHeight - 6;
+  const int x = content.x + metrics.contentSidePadding;
+  return Rect{x, top, content.width - 2 * metrics.contentSidePadding, bottom - top};
+}
+
+// Tile size for `count` tiles in `grid`: equal columns, rows as tall as fit.
+void springboardTile(const Rect& grid, const int count, int& tileW, int& tileH) {
+  const int rows = std::max(1, (count + kSpringColumns - 1) / kSpringColumns);
+  tileW = (grid.width - (kSpringColumns - 1) * kSpringGap) / kSpringColumns;
+  tileH = std::min(kSpringMaxTileH, (grid.height - (rows - 1) * kSpringGap) / rows);
+}
+
+int springboardTileAt(const Rect& grid, const int count, const int x, const int y) {
+  int tileW = 0, tileH = 0;
+  springboardTile(grid, count, tileW, tileH);
+  if (x < grid.x || y < grid.y) return -1;
+  const int col = (x - grid.x) / (tileW + kSpringGap);
+  const int row = (y - grid.y) / (tileH + kSpringGap);
+  if (col >= kSpringColumns || (x - grid.x) % (tileW + kSpringGap) >= tileW) return -1;
+  if ((y - grid.y) % (tileH + kSpringGap) >= tileH) return -1;
+  const int tile = row * kSpringColumns + col;
+  return tile < count ? tile : -1;
+}
+
+const uint8_t* springboardIcon(const UIIcon icon, const std::string& label) {
+  if (label == "Klicker") return PresentationIcon;
+  if (label == "QR-Codes") return QrCodeIcon;
+  switch (icon) {
+    case Folder:
+      return FolderIcon;
+    case Library:
+      return LibraryIcon;
+    case Plugins:
+      return BlocksIcon;
+    case Transfer:
+      return TransferIcon;
+    case Settings:
+      return Settings2Icon;
+    case Book:
+      return BookIcon;
+    case Recent:
+      return CalendarIcon;  // the calendar's row
+    default:
+      return BlocksIcon;
+  }
+}
+
+void drawSpringboard(GfxRenderer& renderer, const Rect& grid, const std::vector<std::string>& labels,
+                     const std::vector<UIIcon>& icons, const int selected) {
+  const int count = static_cast<int>(labels.size());
+  int tileW = 0, tileH = 0;
+  springboardTile(grid, count, tileW, tileH);
+  const int lh = renderer.getLineHeight(UI_10_FONT_ID);
+  for (int i = 0; i < count; ++i) {
+    const int x = grid.x + (i % kSpringColumns) * (tileW + kSpringGap);
+    const int y = grid.y + (i / kSpringColumns) * (tileH + kSpringGap);
+    // Selected: a heavy frame; the others a light one.
+    renderer.drawRoundedRect(x, y, tileW, tileH, i == selected ? 3 : 1, 10, true);
+    const int block = kSpringIcon + 6 + lh;
+    const int iy = y + (tileH - block) / 2;
+    renderer.drawIcon(springboardIcon(icons[i], labels[i]), x + (tileW - kSpringIcon) / 2, iy, kSpringIcon);
+    const std::string label = renderer.truncatedText(UI_10_FONT_ID, labels[i].c_str(), tileW - 8);
+    const int tw = renderer.getTextWidth(UI_10_FONT_ID, label.c_str());
+    renderer.drawText(UI_10_FONT_ID, x + (tileW - tw) / 2, iy + kSpringIcon + 6, label.c_str(), true);
+  }
+}
+}  // namespace
+#endif
+
 int HomeActivity::getMenuItemCount() const {
   int count = 4;  // File Browser, Library, File transfer, Settings
   if (!recentBooks.empty()) {
@@ -35,7 +123,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 2;  // Calendar, Tools
+    count += 3;  // Calendar, Clicker, QR codes
   }
   return count;
 }
@@ -333,8 +421,11 @@ void HomeActivity::loop() {
       case HomeMenuItem::CALENDAR:
         onCalendarOpen();
         break;
-      case HomeMenuItem::TOOLS:
-        onToolsOpen();
+      case HomeMenuItem::CLICKER:
+        onClickerOpen();
+        break;
+      case HomeMenuItem::QR_CODES:
+        onQrCodesOpen();
         break;
       default:
         break;
@@ -442,6 +533,25 @@ void HomeActivity::loop() {
     return;
   }
 
+#if DESKLEAF_CALENDAR
+  {
+    // Springboard tiles: a tap opens the tile under the finger.
+    const int renderedCount =
+        menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
+    int tx = 0, ty = 0;
+    if (mappedInput.wasScreenTapped(tx, ty)) {
+      const int tile = springboardTileAt(springboardRect(renderer, content), renderedCount, tx, ty);
+      if (tile >= 0) {
+        selectorIndex = metrics.homeContinueReadingInMenu ? tile : tile + static_cast<int>(recentBooks.size());
+        haptic_feedback::touchAction();
+        activateSelection();
+        return;
+      }
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) activateSelection();
+    return;
+  }
+#endif
   const int menuTop = metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset;
   const int renderedMenuCount =
       menuCount - (metrics.homeContinueReadingInMenu ? 0 : static_cast<int>(recentBooks.size()));
@@ -545,8 +655,10 @@ void HomeActivity::render(RenderLock&&) {
   if (hasCalendarSlot()) {
     menuItems.push_back(tr(STR_CALENDAR));
     menuIcons.push_back(Recent);
-    menuItems.push_back("Apps");
-    menuIcons.push_back(Blocks);
+    menuItems.push_back("Klicker");
+    menuIcons.push_back(Transfer);
+    menuItems.push_back("QR-Codes");
+    menuIcons.push_back(Image);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -555,6 +667,16 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin(), Book);
   }
 
+#if DESKLEAF_CALENDAR
+  // Deskleaf: the menu as a springboard of icon tiles below the book cover.
+  {
+    const Rect grid = springboardRect(renderer, content);
+    std::vector<std::string> labels(menuItems.begin(), menuItems.end());
+    drawSpringboard(renderer, grid, labels, menuIcons,
+                    metrics.homeContinueReadingInMenu ? selectorIndex
+                                                      : selectorIndex - static_cast<int>(recentBooks.size()));
+  }
+#else
   GUI.drawButtonMenu(
       renderer,
       Rect{content.x, metrics.homeTopPadding + metrics.homeCoverTileHeight + metrics.homeMenuTopOffset, content.width,
@@ -564,6 +686,7 @@ void HomeActivity::render(RenderLock&&) {
       metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - recentBooks.size(),
       [&menuItems](int index) { return std::string(menuItems[index]); },
       [&menuIcons](int index) { return menuIcons[index]; });
+#endif
 
   const auto labels = mappedInput.mapLabels(recentBooks.empty() ? "" : tr(STR_RESUME), tr(STR_SELECT), tr(STR_DIR_UP),
                                             tr(STR_DIR_DOWN));
@@ -601,8 +724,14 @@ void HomeActivity::onCalendarOpen() {
 #endif
 }
 
-void HomeActivity::onToolsOpen() {
+void HomeActivity::onClickerOpen() {
 #if DESKLEAF_CALENDAR
-  activityManager.goToTools();
+  activityManager.goToClicker();
+#endif
+}
+
+void HomeActivity::onQrCodesOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToQrCodes();
 #endif
 }
