@@ -546,7 +546,7 @@ void HomeActivity::render(RenderLock&&) {
     menuItems.push_back(tr(STR_CALENDAR));
     menuIcons.push_back(Recent);
     menuItems.push_back("Apps");
-    menuIcons.push_back(Transfer);
+    menuIcons.push_back(Blocks);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
