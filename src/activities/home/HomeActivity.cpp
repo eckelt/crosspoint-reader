@@ -92,6 +92,7 @@ const uint8_t* springboardIcon(const UIIcon icon, const std::string& label) {
   }
 }
 
+// `selected` < 0 draws no selection: touch needs none, the buttons show one.
 void drawSpringboard(GfxRenderer& renderer, const Rect& grid, const std::vector<std::string>& labels,
                      const std::vector<UIIcon>& icons, const int selected) {
   const int count = static_cast<int>(labels.size());
@@ -101,14 +102,22 @@ void drawSpringboard(GfxRenderer& renderer, const Rect& grid, const std::vector<
   for (int i = 0; i < count; ++i) {
     const int x = grid.x + (i % kSpringColumns) * (tileW + kSpringGap);
     const int y = grid.y + (i / kSpringColumns) * (tileH + kSpringGap);
-    // Selected: a heavy frame; the others a light one.
-    renderer.drawRoundedRect(x, y, tileW, tileH, i == selected ? 3 : 1, 10, true);
+    const bool on = i == selected;
+    const auto style = on ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     const int block = kSpringIcon + 6 + lh;
     const int iy = y + (tileH - block) / 2;
-    renderer.drawIcon(springboardIcon(icons[i], labels[i]), x + (tileW - kSpringIcon) / 2, iy, kSpringIcon);
-    const std::string label = renderer.truncatedText(UI_10_FONT_ID, labels[i].c_str(), tileW - 8);
-    const int tw = renderer.getTextWidth(UI_10_FONT_ID, label.c_str());
-    renderer.drawText(UI_10_FONT_ID, x + (tileW - tw) / 2, iy + kSpringIcon + 6, label.c_str(), true);
+    const int ix = x + (tileW - kSpringIcon) / 2;
+    const uint8_t* icon = springboardIcon(icons[i], labels[i]);
+    renderer.drawIcon(icon, ix, iy, kSpringIcon);
+    if (on) renderer.drawIcon(icon, ix + 1, iy, kSpringIcon);  // twice, a pixel apart: a heavier stroke
+    // Long names ("Einstellungen") step down a font size before they get cut.
+    const int room = tileW + kSpringGap - 2;
+    const int font = renderer.getTextWidth(UI_10_FONT_ID, labels[i].c_str(), style) <= room ? UI_10_FONT_ID : SMALL_FONT_ID;
+    const std::string label = renderer.truncatedText(font, labels[i].c_str(), room, style);
+    const int tw = renderer.getTextWidth(font, label.c_str(), style);
+    renderer.drawText(font, x + (tileW - tw) / 2, iy + kSpringIcon + 6 + (lh - renderer.getLineHeight(font)) / 2,
+                      label.c_str(), true, style);
+    if (on) renderer.fillRect(x + (tileW - tw) / 2, iy + kSpringIcon + 8 + lh, tw, 3, true);
   }
 }
 }  // namespace
@@ -437,11 +446,13 @@ void HomeActivity::loop() {
   if (!coverGridUi) {
     buttonNavigator.onNext([this, menuCount] {
       selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
+      showSelection = true;
       requestUpdate();
     });
 
     buttonNavigator.onPrevious([this, menuCount] {
       selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
+      showSelection = true;
       requestUpdate();
     });
   }
@@ -672,9 +683,9 @@ void HomeActivity::render(RenderLock&&) {
   {
     const Rect grid = springboardRect(renderer, content);
     std::vector<std::string> labels(menuItems.begin(), menuItems.end());
-    drawSpringboard(renderer, grid, labels, menuIcons,
-                    metrics.homeContinueReadingInMenu ? selectorIndex
-                                                      : selectorIndex - static_cast<int>(recentBooks.size()));
+    const int selectedTile =
+        metrics.homeContinueReadingInMenu ? selectorIndex : selectorIndex - static_cast<int>(recentBooks.size());
+    drawSpringboard(renderer, grid, labels, menuIcons, showSelection ? selectedTile : -1);
   }
 #else
   GUI.drawButtonMenu(
