@@ -195,6 +195,30 @@ static void testLayout() {
   }
 }
 
+
+static void testCascade() {
+  // A 9-17 all day, B 9:10-9:40 starts with it, C 12-13 lies on top of A,
+  // D 12:10-12:40 next to C, E 14-14:30 on A only.
+  const auto boxes = layoutCascade({{540, 1020}, {550, 580}, {720, 780}, {730, 760}, {840, 870}});
+  CHECK(boxes.size() == 5);
+  auto find = [&](size_t idx) -> const CascadeBox& {
+    for (const auto& b : boxes)
+      if (b.box.eventIndex == idx) return b;
+    return boxes[0];
+  };
+  CHECK(find(0).level == 0 && find(0).box.groupColumns == 2 && find(0).box.column == 0);
+  CHECK(find(0).box.endMin == 1020);
+  CHECK(find(1).level == 0 && find(1).box.column == 1);
+  CHECK(find(2).level == 1 && find(2).box.groupColumns == 2 && find(2).box.column == 0);
+  CHECK(find(3).level == 1 && find(3).box.column == 1);
+  CHECK(find(4).level == 1 && find(4).box.groupColumns == 1);
+  // Lower levels are drawn first.
+  for (size_t i = 1; i < boxes.size(); ++i) CHECK(boxes[i - 1].level <= boxes[i].level);
+  // Nested: F 10-11 on A is level 1, G 10:40-10:50 on both is level 2.
+  const auto n = layoutCascade({{540, 1020}, {600, 660}, {640, 650}});
+  for (const auto& b : n) CHECK(b.level == static_cast<int>(b.box.eventIndex));
+}
+
 static void testDates() {
   CHECK(weekdayMon0({2026, 11, 3}) == 1);  // Tuesday
   CHECK(weekdayMon0({1970, 1, 1}) == 3);
@@ -330,6 +354,7 @@ int main() {
   testOrganizer();
   testLocation();
   testLayout();
+  testCascade();
   testDates();
   testWake();
   if (failures == 0) std::printf("deskleaf_calendar: all tests passed\n");

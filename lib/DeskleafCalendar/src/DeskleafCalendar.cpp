@@ -736,4 +736,62 @@ std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>&
   return packLines("XACT:", items, maxLen);
 }
 
+std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, const int headMinutes) {
+  struct Iv {
+    size_t idx;
+    int s;
+    int e;     // real end
+    int head;  // end of the head: only heads compete for columns
+  };
+  std::vector<Iv> iv;
+  iv.reserve(inputs.size());
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    int e = inputs[i].endMin;
+    if (e <= inputs[i].startMin) e = inputs[i].startMin + 60;
+    iv.push_back({i, inputs[i].startMin, e, std::min(e, inputs[i].startMin + headMinutes)});
+  }
+  std::sort(iv.begin(), iv.end(), [](const Iv& a, const Iv& b) {
+    if (a.s != b.s) return a.s < b.s;
+    return (a.e - a.s) > (b.e - b.s);
+  });
+
+  std::vector<CascadeBox> out;
+  out.reserve(iv.size());
+  std::vector<int> levelOf(iv.size(), 0);  // by position in iv
+  size_t begin = 0;
+  while (begin < iv.size()) {
+    // Cluster: heads that overlap each other, side by side.
+    size_t end = begin + 1;
+    int headEnd = iv[begin].head;
+    while (end < iv.size() && iv[end].s < headEnd) {
+      headEnd = std::max(headEnd, iv[end].head);
+      ++end;
+    }
+    // On top of every earlier event still running when one of these starts.
+    int level = 0;
+    for (size_t j = 0; j < begin; ++j) {
+      for (size_t i = begin; i < end; ++i) {
+        if (iv[j].e > iv[i].s) {
+          level = std::max(level, levelOf[j] + 1);
+          break;
+        }
+      }
+    }
+    std::vector<LayoutInput> heads;
+    heads.reserve(end - begin);
+    for (size_t i = begin; i < end; ++i) heads.push_back({iv[i].s, iv[i].head});
+    for (LayoutBox b : layoutDay(heads)) {
+      const Iv& v = iv[begin + b.eventIndex];
+      levelOf[begin + b.eventIndex] = level;
+      b.eventIndex = v.idx;
+      b.startMin = v.s;
+      b.endMin = v.e;
+      out.push_back({b, level});
+    }
+    begin = end;
+  }
+  std::stable_sort(out.begin(), out.end(), [](const CascadeBox& a, const CascadeBox& b) { return a.level < b.level; });
+  return out;
+}
+
 }  // namespace deskleaf

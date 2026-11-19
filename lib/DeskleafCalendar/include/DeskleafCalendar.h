@@ -103,6 +103,16 @@ struct LayoutInput {
 // while the neighbouring column is free for its whole time span.
 std::vector<LayoutBox> layoutDay(const std::vector<LayoutInput>& inputs);
 
+// Like layoutDay, but only events that start within `headMinutes` of each
+// other share columns. A later event lies on top of a longer one, indented by
+// `level` steps, so the long event keeps its width. Draw in result order (lower
+// levels first); the last box drawn is the top one.
+struct CascadeBox {
+  LayoutBox box;
+  int level;  // indent steps; 0 = flush left
+};
+std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, int headMinutes = 30);
+
 // --- Dates ---------------------------------------------------------------
 
 struct Date {

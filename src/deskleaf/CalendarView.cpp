@@ -460,22 +460,33 @@ void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& d
   r.drawText(SMALL_FONT_ID, ax + kArrow + 5, ty, t.c_str(), true, EpdFontFamily::BOLD);
 }
 
+// An event that starts while a longer one runs lies on top of it, indented,
+// so the long one keeps its width (see layoutCascade).
+int cascadeIndent(const int areaW, const int level) { return std::min(level, 3) * areaW / 6; }
+
 void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX, int areaW,
                std::vector<HitBox>* hits) {
   std::vector<LayoutInput> inputs;
   inputs.reserve(d.timed.size());
   for (const CalEvent* e : d.timed) inputs.push_back({e->startMinutesOn(d.iso), e->endMinutesOn(d.iso)});
-  for (const LayoutBox& b : layoutDay(inputs)) {
-    const int colW = (areaW - kColGap * (b.groupColumns - 1)) / b.groupColumns;
-    const int bx = areaX + b.column * (colW + kColGap);
+  const size_t firstHit = hits ? hits->size() : 0;
+  for (const CascadeBox& c : layoutCascade(inputs)) {
+    const LayoutBox& b = c.box;
+    const int indent = cascadeIndent(areaW, c.level);
+    const int w = areaW - indent;
+    const int colW = (w - kColGap * (b.groupColumns - 1)) / b.groupColumns;
+    const int bx = areaX + indent + b.column * (colW + kColGap);
     const int bw = colW * b.colSpan + kColGap * (b.colSpan - 1);
     const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
     const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
     const int boxH = std::min(bh, a.bottom - by);
+    if (c.level > 0) r.fillRect(bx - 3, by - 2, bw + 3, boxH + 4, false);  // white gap to the box below
     drawEventBox(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (b.endMin > a.lastHour * 60) drawContinues(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (hits) hits->push_back({bx, by, bw, boxH, d.timed[b.eventIndex]});
   }
+  // Taps look for the first hit: the top box must come first.
+  if (hits) std::reverse(hits->begin() + firstHit, hits->end());
 }
 
 constexpr int kPeekW = 90;  // the next day's column, to see how full it is more than to read it
@@ -495,14 +506,17 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
   std::vector<LayoutInput> inputs;
   inputs.reserve(nd.timed.size());
   for (const CalEvent* e : nd.timed) inputs.push_back({e->startMinutesOn(nd.iso), e->endMinutesOn(nd.iso)});
-  for (const LayoutBox& b : layoutDay(inputs)) {
+  for (const CascadeBox& c : layoutCascade(inputs)) {
+    const LayoutBox& b = c.box;
     if (b.endMin <= a.firstHour * 60 || b.startMin >= a.lastHour * 60) continue;
-    const int colW = (w - 2 * (b.groupColumns - 1)) / b.groupColumns;
-    const int bx = x + b.column * (colW + 2);
+    const int indent = std::min(c.level, 3) * w / 6;
+    const int colW = (w - indent - 2 * (b.groupColumns - 1)) / b.groupColumns;
+    const int bx = x + indent + b.column * (colW + 2);
     const int bw = colW * b.colSpan + 2 * (b.colSpan - 1);
     const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
     const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
     const CalEvent& e = *nd.timed[b.eventIndex];
+    if (c.level > 0) r.fillRect(bx - 2, by - 1, bw + 2, bh + 2, false);
     if (e.isCancelled) {
       r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
     } else {
