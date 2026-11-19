@@ -64,6 +64,8 @@ class HomeActivity final : public Activity {
     if (item == HomeMenuItem::CLICKER) return i;
     ++i;
     if (item == HomeMenuItem::QR_CODES) return i;
+    ++i;
+    if (item == HomeMenuItem::CHECKLISTS) return i;
     return 0;
   }
 
@@ -78,7 +80,8 @@ class HomeActivity final : public Activity {
 #if DESKLEAF_CALENDAR
     if (idx == i++) return HomeMenuItem::CALENDAR;
     if (idx == i++) return HomeMenuItem::CLICKER;
-    if (idx == i) return HomeMenuItem::QR_CODES;
+    if (idx == i++) return HomeMenuItem::QR_CODES;
+    if (idx == i) return HomeMenuItem::CHECKLISTS;
 #endif
     return HomeMenuItem::NONE;
   }
@@ -92,6 +95,7 @@ class HomeActivity final : public Activity {
   void onCalendarOpen();
   void onClickerOpen();
   void onQrCodesOpen();
+  void onChecklistsOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image

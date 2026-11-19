@@ -28,6 +28,7 @@
 #include "plugins/PluginCatalogActivity.h"
 #if DESKLEAF_CALENDAR
 #include "calendar/CalendarActivity.h"
+#include "calendar/ChecklistsActivity.h"
 #include "calendar/ClickerActivity.h"
 #include "calendar/QrCodesActivity.h"
 #include "deskleaf/DeskleafCalendarService.h"
@@ -334,6 +335,9 @@ void ActivityManager::goToBrowser() {
 void ActivityManager::goToCalendar() { replaceActivity(std::make_unique<CalendarActivity>(renderer, mappedInput)); }
 void ActivityManager::goToClicker() { replaceActivity(std::make_unique<ClickerActivity>(renderer, mappedInput)); }
 void ActivityManager::goToQrCodes() { replaceActivity(std::make_unique<QrCodesActivity>(renderer, mappedInput)); }
+void ActivityManager::goToChecklists() {
+  replaceActivity(std::make_unique<ChecklistsActivity>(renderer, mappedInput));
+}
 #endif
 
 void ActivityManager::goToPlugins(bool showOpds) {
