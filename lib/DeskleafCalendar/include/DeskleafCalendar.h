@@ -113,6 +113,10 @@ struct CascadeBox {
 };
 std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, int headMinutes = 30);
 
+// Attendees grouped by the company the bridge puts in brackets:
+// {"Anna (Lotto24)", "Paul", "Max (Lotto24)"} -> "Lotto24: Anna, Max · Paul".
+std::string attendeesLine(const std::vector<std::string>& attendees);
+
 // --- Dates ---------------------------------------------------------------
 
 struct Date {

@@ -736,6 +736,37 @@ std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>&
   return packLines("XACT:", items, maxLen);
 }
 
+std::string attendeesLine(const std::vector<std::string>& attendees) {
+  struct Group {
+    std::string company;  // empty: no company known
+    std::string names;
+  };
+  std::vector<Group> groups;
+  for (const std::string& a : attendees) {
+    std::string name = a;
+    std::string company;
+    const size_t open = a.rfind(" (");
+    if (open != std::string::npos && a.size() > open + 3 && a.back() == ')') {
+      name = a.substr(0, open);
+      company = a.substr(open + 2, a.size() - open - 3);
+    }
+    auto it = std::find_if(groups.begin(), groups.end(), [&](const Group& g) { return g.company == company; });
+    if (it == groups.end()) {
+      groups.push_back({company, name});
+    } else {
+      it->names += ", " + name;
+    }
+  }
+  // Named companies first, in order of appearance; the rest at the end.
+  std::stable_partition(groups.begin(), groups.end(), [](const Group& g) { return !g.company.empty(); });
+  std::string out;
+  for (const Group& g : groups) {
+    if (!out.empty()) out += " \xC2\xB7 ";
+    out += g.company.empty() ? g.names : g.company + ": " + g.names;
+  }
+  return out;
+}
+
 std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, const int headMinutes) {
   struct Iv {
     size_t idx;

@@ -219,6 +219,15 @@ static void testCascade() {
   for (const auto& b : n) CHECK(b.level == static_cast<int>(b.box.eventIndex));
 }
 
+
+static void testAttendeesLine() {
+  CHECK(attendeesLine({"Anna (Lotto24)", "Paul", "Max Muster (Lotto24)", "Bob (Tchibo)"}) ==
+        "Lotto24: Anna, Max Muster \xC2\xB7 Tchibo: Bob \xC2\xB7 Paul");
+  CHECK(attendeesLine({"Paul", "Lisa"}) == "Paul, Lisa");
+  CHECK(attendeesLine({}).empty());
+  CHECK(attendeesLine({"Team (intern) (Ecke)"}) == "Ecke: Team (intern)");
+}
+
 static void testDates() {
   CHECK(weekdayMon0({2026, 11, 3}) == 1);  // Tuesday
   CHECK(weekdayMon0({1970, 1, 1}) == 3);
@@ -355,6 +364,7 @@ int main() {
   testLocation();
   testLayout();
   testCascade();
+  testAttendeesLine();
   testDates();
   testWake();
   if (failures == 0) std::printf("deskleaf_calendar: all tests passed\n");

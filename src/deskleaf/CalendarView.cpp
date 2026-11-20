@@ -863,8 +863,7 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   y = drawChips(r, chipsFor(e), x, y, tw, true);
   y = drawField(r, "Ort", e.isOnSite() ? e.displayLocation() : std::string(), x, y, tw, bottom, true);
   y = drawField(r, "Organisation", e.organizerName(), x, y, tw, bottom, true);
-  std::string others;
-  for (const std::string& name : e.attendees) others += (others.empty() ? "" : ", ") + name;
+  std::string others = attendeesLine(e.attendees);
   if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
   y = drawField(r, "Teilnehmer", others, x,
                 y, tw, bottom, true);
