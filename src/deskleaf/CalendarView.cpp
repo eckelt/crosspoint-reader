@@ -21,7 +21,8 @@ namespace {
 
 constexpr int kMargin = 8;
 constexpr int kAxisW = 30;  // hour labels left of the timeline
-constexpr int kColGap = 4;
+constexpr int kColGap = 8;
+constexpr int kRowGap = 3;  // white above and below each box, so back-to-back events stay apart
 constexpr int kMinBoxH = 26;
 // The family calendar was red on the 4-color Deskleaf; here dark gray, white text.
 constexpr const char* kFamilyCalendar = "Ohana";
@@ -477,10 +478,10 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
     const int colW = (w - kColGap * (b.groupColumns - 1)) / b.groupColumns;
     const int bx = areaX + indent + b.column * (colW + kColGap);
     const int bw = colW * b.colSpan + kColGap * (b.colSpan - 1);
-    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
-    const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
+    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + kRowGap;
+    const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - kRowGap);
     const int boxH = std::min(bh, a.bottom - by);
-    if (c.level > 0) r.fillRect(bx - 3, by - 2, bw + 3, boxH + 4, false);  // white gap to the box below
+    if (c.level > 0) r.fillRect(bx - 6, by - 5, bw + 6, boxH + 10, false);  // white gap to the box below
     drawEventBox(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (b.endMin > a.lastHour * 60) drawContinues(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (hits) hits->push_back({bx, by, bw, boxH, d.timed[b.eventIndex]});
@@ -510,13 +511,13 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
     const LayoutBox& b = c.box;
     if (b.endMin <= a.firstHour * 60 || b.startMin >= a.lastHour * 60) continue;
     const int indent = std::min(c.level, 3) * w / 6;
-    const int colW = (w - indent - 2 * (b.groupColumns - 1)) / b.groupColumns;
-    const int bx = x + indent + b.column * (colW + 2);
-    const int bw = colW * b.colSpan + 2 * (b.colSpan - 1);
-    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 1;
-    const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 1);
+    const int colW = (w - indent - 4 * (b.groupColumns - 1)) / b.groupColumns;
+    const int bx = x + indent + b.column * (colW + 4);
+    const int bw = colW * b.colSpan + 4 * (b.colSpan - 1);
+    const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 2;
+    const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 2);
     const CalEvent& e = *nd.timed[b.eventIndex];
-    if (c.level > 0) r.fillRect(bx - 2, by - 1, bw + 2, bh + 2, false);
+    if (c.level > 0) r.fillRect(bx - 4, by - 3, bw + 4, bh + 6, false);
     if (e.isCancelled) {
       r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
     } else {
