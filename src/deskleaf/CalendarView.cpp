@@ -24,7 +24,7 @@ constexpr int kAxisW = 30;  // hour labels left of the timeline
 constexpr int kColGap = 8;
 constexpr int kRowGap = 3;  // white above and below each box, so back-to-back events stay apart
 constexpr int kMinBoxH = 26;
-// The family calendar was red on the 4-color Deskleaf; here dark gray, white text.
+// The family calendar was red on the 4-color Deskleaf; here dark gray with black text.
 constexpr const char* kFamilyCalendar = "Ohana";
 
 const char* platformLabel(MeetingPlatform p) {
@@ -212,7 +212,7 @@ int drawNotes(const GfxRenderer& r, const std::vector<NoteBlock>& blocks, const 
 
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
-  const bool textBlack = !family;
+  const bool textBlack = true;  // black reads better on the dithered dark gray than white
   if (e.isCancelled) {
     r.fillRect(x, y, w, h, false);
     dottedRect(r, x, y, w, h);
@@ -397,7 +397,7 @@ int drawBars(const GfxRenderer& r, const DaySplit& d, int x, int w, int y, int b
       r.fillRoundedRect(x, y, w, barH, 4, family ? Color::DarkGray : Color::LightGray);
     }
     const std::string t = r.truncatedText(UI_10_FONT_ID, e->subject.c_str(), w - 12);
-    r.drawText(UI_10_FONT_ID, x + 6, y + 3, t.c_str(), !family);
+    r.drawText(UI_10_FONT_ID, x + 6, y + 3, t.c_str(), true);
     if (hits) hits->push_back({x, y, w, barH, e});
     y += barH + 3;
   }
@@ -481,7 +481,10 @@ void drawTimed(const GfxRenderer& r, const DaySplit& d, const Axis& a, int areaX
     const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + kRowGap;
     const int bh = std::max(kMinBoxH, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - kRowGap);
     const int boxH = std::min(bh, a.bottom - by);
-    if (c.level > 0) r.fillRect(bx - 6, by - 5, bw + 6, boxH + 10, false);  // white gap to the box below
+    // Rounded white ring cut into whatever lies below: a box stretched to the
+    // minimum height, or the long event this one lies on.
+    const int ring = c.level > 0 ? 5 : 3;
+    r.fillRoundedRect(bx - ring, by - ring, bw + 2 * ring, boxH + 2 * ring, 4 + ring, Color::White);
     drawEventBox(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (b.endMin > a.lastHour * 60) drawContinues(r, *d.timed[b.eventIndex], d.iso, bx, by, bw, boxH);
     if (hits) hits->push_back({bx, by, bw, boxH, d.timed[b.eventIndex]});
@@ -517,7 +520,7 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
     const int by = a.yOf(std::max(b.startMin, a.firstHour * 60)) + 2;
     const int bh = std::max(6, a.yOf(std::min(b.endMin, a.lastHour * 60)) - by - 2);
     const CalEvent& e = *nd.timed[b.eventIndex];
-    if (c.level > 0) r.fillRect(bx - 4, by - 3, bw + 4, bh + 6, false);
+    if (c.level > 0) r.fillRoundedRect(bx - 3, by - 3, bw + 6, bh + 6, 6, Color::White);
     if (e.isCancelled) {
       r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
     } else {
