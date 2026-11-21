@@ -227,9 +227,8 @@ static void testAttendeesLine() {
   CHECK(attendeesLine({}).empty());
   // Brackets in a display name are not a company.
   CHECK(attendeesLine({"Nils Eckelt (Extern)"}) == "Nils Eckelt (Extern)");
-  // Seven and more: first name and initial.
-  CHECK(attendeesLine({"Franziska Isabell Voss\x1fSI", "Kai Dahl\x1fSI", "Ute\x1fSI", "A B", "C D", "E F", "G H"}) ==
-        "SI: Franziska V., Kai D., Ute \xC2\xB7 A B., C D., E F., G H.");
+  const auto g = groupAttendees({"Paul", "Kai Dahl\x1fSI", "Ute\x1fSI"});
+  CHECK(g.size() == 2 && g[0].company == "SI" && g[0].names.size() == 2 && g[1].names[0] == "Paul");
 }
 
 static void testDates() {

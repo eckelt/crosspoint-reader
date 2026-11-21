@@ -778,6 +778,55 @@ int drawField(const GfxRenderer& r, const char* label, const std::string& value,
   return drawLines(r, UI_10_FONT_ID, x, y, w, value, 3, bottom, true);
 }
 
+// Many attendees: per company a small heading, the names in two columns read
+// downwards. What does not fit before `bottom` ends in "+N weitere".
+int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& attendees, const int x, int y,
+                        const int w, const int bottom) {
+  const int smallH = r.getLineHeight(SMALL_FONT_ID);
+  const int rowH = smallH + 2;  // small: a big meeting should not push the notes away
+  constexpr int kGap = 16;
+  const int colW = (w - kGap) / 2;
+  y += 6;
+  const std::string label = "Teilnehmer \xC2\xB7 " + std::to_string(attendees.size());
+  r.drawText(SMALL_FONT_ID, x, y, label.c_str(), true, EpdFontFamily::BOLD);
+  y += 2;
+  y += smallH;
+  int shown = 0;
+  const auto groups = groupAttendees(attendees);
+  for (size_t gi = 0; gi < groups.size(); ++gi) {
+    const AttendeeGroup& g = groups[gi];
+    const bool heading = groups.size() > 1 || !g.company.empty();
+    if (heading) {
+      if (y + smallH + rowH > bottom) break;
+      y += gi ? 6 : 2;
+      std::string head = g.company.empty() ? std::string("Weitere") : g.company;
+      r.drawText(SMALL_FONT_ID, x, y, head.c_str(), true, EpdFontFamily::BOLD);
+      y += smallH;
+    }
+    const int n = static_cast<int>(g.names.size());
+    int rows = (n + 1) / 2;
+    const int fit = std::max(0, (bottom - y) / rowH);
+    // Too long for the page: fill what fits, the last cell says how many are missing.
+    const bool cut = rows > fit;
+    if (cut) rows = fit;
+    const int cells = cut ? 2 * rows - 1 : n;
+    for (int i = 0; i < cells; ++i) {
+      const int col = cut ? i / rows : (i < rows ? 0 : 1);
+      const int row = cut ? i % rows : (i < rows ? i : i - rows);
+      const std::string name = r.truncatedText(SMALL_FONT_ID, g.names[i].c_str(), colW);
+      r.drawText(SMALL_FONT_ID, x + col * (colW + kGap), y + row * rowH, name.c_str(), true);
+    }
+    shown += cells;
+    y += rows * rowH;
+    if (cut) {
+      const std::string rest = "+" + std::to_string(static_cast<int>(attendees.size()) - shown) + " weitere";
+      r.drawText(SMALL_FONT_ID, x + colW + kGap, y - rowH, rest.c_str(), true, EpdFontFamily::BOLD);
+      break;
+    }
+  }
+  return y;
+}
+
 // Popup card body; draw=false measures. Returns the y below the content.
 int popupBody(const GfxRenderer& r, const CalEvent& e, const int x, int y, const int w, const int bottom,
               const bool draw) {
@@ -892,12 +941,13 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   y = drawChips(r, chipsFor(e), x, y, tw, true);
   y = drawField(r, "Ort", e.isOnSite() ? e.displayLocation() : std::string(), x, y, tw, bottom, true);
   y = drawField(r, "Organisation", e.organizerName(), x, y, tw, bottom, true);
-  std::string others = attendeesLine(e.attendees);
-  if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
-  const std::string label =
-      e.attendees.size() > 3 ? "Teilnehmer \xC2\xB7 " + std::to_string(e.attendees.size()) : std::string("Teilnehmer");
-  y = drawField(r, label.c_str(), others, x,
-                y, tw, bottom, true);
+  if (e.attendees.size() > 3) {
+    y = drawAttendeeColumns(r, e.attendees, x, y, tw, notesBottom);
+  } else {
+    std::string others = attendeesLine(e.attendees);
+    if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
+    y = drawField(r, "Teilnehmer", others, x, y, tw, bottom, true);
+  }
 
   if (blocks.empty()) return -1;
   if (y + 2 * smallH >= notesBottom) return more(0);  // notes start on page 2

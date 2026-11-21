@@ -736,39 +736,29 @@ std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>&
   return packLines("XACT:", items, maxLen);
 }
 
-std::string attendeesLine(const std::vector<std::string>& attendees) {
-  struct Group {
-    std::string company;  // empty: no company known
-    std::string names;
-  };
-  std::vector<Group> groups;
+std::vector<AttendeeGroup> groupAttendees(const std::vector<std::string>& attendees) {
+  std::vector<AttendeeGroup> groups;
   for (const std::string& a : attendees) {
-    std::string name = a;
-    std::string company;
     const size_t sep = a.find('\x1f');
-    if (sep != std::string::npos) {
-      name = a.substr(0, sep);
-      company = a.substr(sep + 1);
-    }
-    if (attendees.size() > 6) {
-      // "Franziska Isabell Voß" -> "Franziska V."
-      const size_t first = name.find(' ');
-      const size_t last = name.rfind(' ');
-      if (first != std::string::npos && last + 1 < name.size()) name = name.substr(0, first) + " " + name[last + 1] + ".";
-    }
-    auto it = std::find_if(groups.begin(), groups.end(), [&](const Group& g) { return g.company == company; });
+    const std::string name = sep == std::string::npos ? a : a.substr(0, sep);
+    const std::string company = sep == std::string::npos ? std::string() : a.substr(sep + 1);
+    auto it = std::find_if(groups.begin(), groups.end(), [&](const AttendeeGroup& g) { return g.company == company; });
     if (it == groups.end()) {
-      groups.push_back({company, name});
+      groups.push_back({company, {name}});
     } else {
-      it->names += ", " + name;
+      it->names.push_back(name);
     }
   }
-  // Named companies first, in order of appearance; the rest at the end.
-  std::stable_partition(groups.begin(), groups.end(), [](const Group& g) { return !g.company.empty(); });
+  std::stable_partition(groups.begin(), groups.end(), [](const AttendeeGroup& g) { return !g.company.empty(); });
+  return groups;
+}
+
+std::string attendeesLine(const std::vector<std::string>& attendees) {
   std::string out;
-  for (const Group& g : groups) {
+  for (const AttendeeGroup& g : groupAttendees(attendees)) {
     if (!out.empty()) out += " \xC2\xB7 ";
-    out += g.company.empty() ? g.names : g.company + ": " + g.names;
+    if (!g.company.empty()) out += g.company + ": ";
+    for (size_t i = 0; i < g.names.size(); ++i) out += (i ? ", " : "") + g.names[i];
   }
   return out;
 }
