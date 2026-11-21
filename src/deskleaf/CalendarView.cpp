@@ -232,6 +232,16 @@ void fillEventBox(const GfxRenderer& r, const int x, const int y, const int w, c
   }
 }
 
+// The companies of an event's attendees, in order: "Signal-Iduna, Tudock".
+std::string companiesLine(const std::vector<std::string>& attendees) {
+  std::string out;
+  for (const AttendeeGroup& g : groupAttendees(attendees)) {
+    if (g.company.empty()) continue;
+    out += (out.empty() ? "" : ", ") + g.company;
+  }
+  return out;
+}
+
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
   const bool textBlack = true;  // black reads better on the dithered dark gray than white
@@ -269,8 +279,13 @@ void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& da
   const int titleW = right - tx - 2;
   const int smallH = r.getLineHeight(SMALL_FONT_ID);
   const bool oneLine = h - 6 < titleH + smallH;
-  std::string who = e.organizerName();
-  if (e.numAttendees > 0) who += (who.empty() ? "+" : " +") + std::to_string(e.numAttendees);
+  // Who: the companies involved; without any, the organizer and how many others.
+  std::string who = companiesLine(e.attendees);
+  if (who.empty()) {
+    who = e.organizerName();
+    const int n = e.attendees.empty() ? e.numAttendees : static_cast<int>(e.attendees.size());
+    if (n > 0) who += (who.empty() ? "+" : " +") + std::to_string(n);
+  }
 
   int cy = y + 3;
   if (oneLine) {
@@ -760,7 +775,10 @@ std::string whenLine(const CalEvent& e) {
 
 std::string whoLine(const CalEvent& e) {
   std::string who = e.organizerName();
-  if (e.numAttendees > 0) who += (who.empty() ? "" : "  ·  ") + ("+" + std::to_string(e.numAttendees));
+  const int n = e.attendees.empty() ? e.numAttendees : static_cast<int>(e.attendees.size());
+  if (n > 0) who += (who.empty() ? "" : "  ·  ") + ("+" + std::to_string(n));
+  const std::string firms = companiesLine(e.attendees);
+  if (!firms.empty()) who += "  ·  " + firms;
   return who;
 }
 
@@ -780,8 +798,8 @@ int drawField(const GfxRenderer& r, const char* label, const std::string& value,
 
 // Many attendees: per company a small heading, the names in two columns read
 // downwards. What does not fit before `bottom` ends in "+N weitere".
-int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& attendees, const int x, int y,
-                        const int w, const int bottom) {
+int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& attendees, const int invited,
+                        const int x, int y, const int w, const int bottom) {
   const int smallH = r.getLineHeight(SMALL_FONT_ID);
   const int rowH = smallH + 2;  // small: a big meeting should not push the notes away
   constexpr int kGap = 16;
@@ -789,6 +807,12 @@ int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& at
   y += 6;
   const std::string label = "Teilnehmer \xC2\xB7 " + std::to_string(attendees.size());
   r.drawText(SMALL_FONT_ID, x, y, label.c_str(), true, EpdFontFamily::BOLD);
+  if (invited > static_cast<int>(attendees.size())) {
+    // Some were invited twice (guest accounts, second addresses): 13 people, 18 invitations.
+    const std::string more = "(" + std::to_string(invited) + " Einladungen)";
+    r.drawText(SMALL_FONT_ID, x + r.getTextWidth(SMALL_FONT_ID, label.c_str(), EpdFontFamily::BOLD) + 6, y,
+               more.c_str(), true);
+  }
   y += 2;
   y += smallH;
   int shown = 0;
@@ -942,7 +966,7 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   y = drawField(r, "Ort", e.isOnSite() ? e.displayLocation() : std::string(), x, y, tw, bottom, true);
   y = drawField(r, "Organisation", e.organizerName(), x, y, tw, bottom, true);
   if (e.attendees.size() > 3) {
-    y = drawAttendeeColumns(r, e.attendees, x, y, tw, notesBottom);
+    y = drawAttendeeColumns(r, e.attendees, e.numAttendees, x, y, tw, notesBottom);
   } else {
     std::string others = attendeesLine(e.attendees);
     if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
