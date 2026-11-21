@@ -739,14 +739,28 @@ std::vector<std::string> activityHistoryLines(const std::vector<ActivityRecord>&
 std::vector<AttendeeGroup> groupAttendees(const std::vector<std::string>& attendees) {
   std::vector<AttendeeGroup> groups;
   for (const std::string& a : attendees) {
-    const size_t sep = a.find('\x1f');
-    const std::string name = sep == std::string::npos ? a : a.substr(0, sep);
-    const std::string company = sep == std::string::npos ? std::string() : a.substr(sep + 1);
-    auto it = std::find_if(groups.begin(), groups.end(), [&](const AttendeeGroup& g) { return g.company == company; });
+    std::string fields[3];
+    size_t start = 0;
+    for (int f = 0; f < 3; ++f) {
+      const size_t sep = f < 2 ? a.find('\x1f', start) : std::string::npos;
+      fields[f] = a.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+      if (sep == std::string::npos) break;
+      start = sep + 1;
+    }
+    Attendee person{fields[0], false, 1};
+    for (size_t i = 0; i < fields[2].size(); ++i) {
+      if (fields[2][i] == 'e') {
+        person.guest = true;
+      } else if (fields[2][i] >= '0' && fields[2][i] <= '9') {
+        person.addresses = std::atoi(fields[2].c_str() + i);
+        break;
+      }
+    }
+    auto it = std::find_if(groups.begin(), groups.end(), [&](const AttendeeGroup& g) { return g.company == fields[1]; });
     if (it == groups.end()) {
-      groups.push_back({company, {name}});
+      groups.push_back({fields[1], {person}});
     } else {
-      it->names.push_back(name);
+      it->people.push_back(person);
     }
   }
   std::stable_partition(groups.begin(), groups.end(), [](const AttendeeGroup& g) { return !g.company.empty(); });
@@ -758,7 +772,10 @@ std::string attendeesLine(const std::vector<std::string>& attendees) {
   for (const AttendeeGroup& g : groupAttendees(attendees)) {
     if (!out.empty()) out += " \xC2\xB7 ";
     if (!g.company.empty()) out += g.company + ": ";
-    for (size_t i = 0; i < g.names.size(); ++i) out += (i ? ", " : "") + g.names[i];
+    for (size_t i = 0; i < g.people.size(); ++i) {
+      out += (i ? ", " : "") + g.people[i].name;
+      if (g.people[i].guest) out += " (ext)";
+    }
   }
   return out;
 }

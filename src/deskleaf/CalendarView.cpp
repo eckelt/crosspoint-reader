@@ -796,14 +796,27 @@ int drawField(const GfxRenderer& r, const char* label, const std::string& value,
   return drawLines(r, UI_10_FONT_ID, x, y, w, value, 3, bottom, true);
 }
 
-// Many attendees: per company a small heading, the names in two columns read
-// downwards. What does not fit before `bottom` ends in "+N weitere".
+// A small circled "e": this person has a guest account at the customer.
+int drawGuestMark(const GfxRenderer& r, const int x, const int y, const int lineH) {
+  const int d = std::max(9, lineH * 2 / 3);
+  const int cy = y + (lineH - d) / 2 + 1;
+  r.drawRoundedRect(x, cy, d, d, 1, d / 2, true);
+  const int ew = r.getTextWidth(SMALL_FONT_ID, "e");
+  r.drawText(SMALL_FONT_ID, x + (d - ew) / 2, y - 1, "e", true);
+  return d;
+}
+
+// Many attendees: per company a bold heading with the head count and a rule to
+// the right edge, the names indented below in two columns read downwards; a
+// circled e marks guests, "×2" people invited with two addresses. What does
+// not fit before `bottom` ends in "+N weitere".
 int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& attendees, const int invited,
                         const int x, int y, const int w, const int bottom) {
   const int smallH = r.getLineHeight(SMALL_FONT_ID);
   const int rowH = smallH + 2;  // small: a big meeting should not push the notes away
-  constexpr int kGap = 16;
-  const int colW = (w - kGap) / 2;
+  constexpr int kIndent = 12;
+  constexpr int kGap = 14;
+  const int colW = (w - kIndent - kGap) / 2;
   y += 6;
   const std::string label = "Teilnehmer \xC2\xB7 " + std::to_string(attendees.size());
   r.drawText(SMALL_FONT_ID, x, y, label.c_str(), true, EpdFontFamily::BOLD);
@@ -813,21 +826,22 @@ int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& at
     r.drawText(SMALL_FONT_ID, x + r.getTextWidth(SMALL_FONT_ID, label.c_str(), EpdFontFamily::BOLD) + 6, y,
                more.c_str(), true);
   }
-  y += 2;
-  y += smallH;
+  y += smallH + 2;
   int shown = 0;
   const auto groups = groupAttendees(attendees);
   for (size_t gi = 0; gi < groups.size(); ++gi) {
     const AttendeeGroup& g = groups[gi];
-    const bool heading = groups.size() > 1 || !g.company.empty();
-    if (heading) {
-      if (y + smallH + rowH > bottom) break;
-      y += gi ? 6 : 2;
-      std::string head = g.company.empty() ? std::string("Weitere") : g.company;
-      r.drawText(SMALL_FONT_ID, x, y, head.c_str(), true, EpdFontFamily::BOLD);
-      y += smallH;
-    }
-    const int n = static_cast<int>(g.names.size());
+    if (y + smallH + rowH > bottom) break;
+    y += gi ? 6 : 2;
+    // Heading: "Signal-Iduna · 9" and a thin rule to the right edge.
+    const std::string head =
+        (g.company.empty() ? std::string("Weitere") : g.company) + " \xC2\xB7 " + std::to_string(g.people.size());
+    r.drawText(SMALL_FONT_ID, x, y, head.c_str(), true, EpdFontFamily::BOLD);
+    const int ruleX = x + r.getTextWidth(SMALL_FONT_ID, head.c_str(), EpdFontFamily::BOLD) + 8;
+    if (ruleX < x + w) r.drawLine(ruleX, y + smallH / 2 + 1, x + w, y + smallH / 2 + 1, true);
+    y += smallH + 1;
+
+    const int n = static_cast<int>(g.people.size());
     int rows = (n + 1) / 2;
     const int fit = std::max(0, (bottom - y) / rowH);
     // Too long for the page: fill what fits, the last cell says how many are missing.
@@ -835,16 +849,24 @@ int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& at
     if (cut) rows = fit;
     const int cells = cut ? 2 * rows - 1 : n;
     for (int i = 0; i < cells; ++i) {
+      const Attendee& p = g.people[i];
       const int col = cut ? i / rows : (i < rows ? 0 : 1);
       const int row = cut ? i % rows : (i < rows ? i : i - rows);
-      const std::string name = r.truncatedText(SMALL_FONT_ID, g.names[i].c_str(), colW);
-      r.drawText(SMALL_FONT_ID, x + col * (colW + kGap), y + row * rowH, name.c_str(), true);
+      const int cx = x + kIndent + col * (colW + kGap);
+      const int cy = y + row * rowH;
+      const std::string times = p.addresses > 1 ? "\xC3\x97" + std::to_string(p.addresses) : std::string();
+      const int markW = (p.guest ? smallH * 2 / 3 + 4 : 0) + (times.empty() ? 0 : r.getTextWidth(SMALL_FONT_ID, times.c_str()) + 4);
+      const std::string name = r.truncatedText(SMALL_FONT_ID, p.name.c_str(), colW - markW);
+      r.drawText(SMALL_FONT_ID, cx, cy, name.c_str(), true);
+      int mx = cx + r.getTextWidth(SMALL_FONT_ID, name.c_str()) + 4;
+      if (p.guest) mx += drawGuestMark(r, mx, cy, smallH) + 4;
+      if (!times.empty()) r.drawText(SMALL_FONT_ID, mx, cy, times.c_str(), true);
     }
     shown += cells;
     y += rows * rowH;
     if (cut) {
       const std::string rest = "+" + std::to_string(static_cast<int>(attendees.size()) - shown) + " weitere";
-      r.drawText(SMALL_FONT_ID, x + colW + kGap, y - rowH, rest.c_str(), true, EpdFontFamily::BOLD);
+      r.drawText(SMALL_FONT_ID, x + kIndent + colW + kGap, y - rowH, rest.c_str(), true, EpdFontFamily::BOLD);
       break;
     }
   }

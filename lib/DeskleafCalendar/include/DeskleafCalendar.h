@@ -113,14 +113,22 @@ struct CascadeBox {
 };
 std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, int headMinutes = 30);
 
-// Attendees grouped by the company the bridge appends after a unit separator
-// (0x1F): named companies first in order of appearance, people without one last.
+// Attendees as the bridge sends them, fields split by a unit separator (0x1F):
+// "Name", "Name\x1fCompany" or "Name\x1fCompany\x1fmarks" where marks are
+// "e" (has a guest account at the customer) and/or how many addresses were
+// invited ("e2"). Grouped by company: named companies first in order of
+// appearance, people without one last.
+struct Attendee {
+  std::string name;
+  bool guest = false;
+  int addresses = 1;
+};
 struct AttendeeGroup {
   std::string company;  // empty: no company known
-  std::vector<std::string> names;
+  std::vector<Attendee> people;
 };
 std::vector<AttendeeGroup> groupAttendees(const std::vector<std::string>& attendees);
-// The groups on one line: {"Anna\x1fLotto24", "Paul", "Max\x1fLotto24"} -> "Lotto24: Anna, Max · Paul".
+// The groups on one line: "Lotto24: Anna, Max (ext) · Paul".
 std::string attendeesLine(const std::vector<std::string>& attendees);
 
 // --- Dates ---------------------------------------------------------------

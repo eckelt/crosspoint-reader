@@ -227,8 +227,11 @@ static void testAttendeesLine() {
   CHECK(attendeesLine({}).empty());
   // Brackets in a display name are not a company.
   CHECK(attendeesLine({"Nils Eckelt (Extern)"}) == "Nils Eckelt (Extern)");
-  const auto g = groupAttendees({"Paul", "Kai Dahl\x1fSI", "Ute\x1fSI"});
-  CHECK(g.size() == 2 && g[0].company == "SI" && g[0].names.size() == 2 && g[1].names[0] == "Paul");
+  const auto g = groupAttendees({"Paul", "Kai Dahl\x1fSI", "Johann Laur\x1fSI\x1f" "e2", "Seb\x1f\x1f" "2"});
+  CHECK(g.size() == 2 && g[0].company == "SI" && g[0].people.size() == 2 && g[1].people[0].name == "Paul");
+  CHECK(g[0].people[1].guest && g[0].people[1].addresses == 2 && !g[0].people[0].guest);
+  CHECK(g[1].people[1].name == "Seb" && g[1].people[1].addresses == 2 && !g[1].people[1].guest);
+  CHECK(attendeesLine({"Lisa\x1fLotto24\x1f" "e"}) == "Lotto24: Lisa (ext)");
 }
 
 static void testDates() {
