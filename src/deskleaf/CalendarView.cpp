@@ -210,18 +210,36 @@ int drawNotes(const GfxRenderer& r, const std::vector<NoteBlock>& blocks, const 
   return -1;
 }
 
+// Event fills, lighter than the renderer's grays so text stays crisp:
+// ordinary events 12.5 % dots, the family calendar 25 % (LightGray).
+void fillFaint(const GfxRenderer& r, const int x, const int y, const int w, const int h) {
+  r.fillRect(x, y, w, h, false);
+  for (int yy = y + (y & 1); yy < y + h; yy += 2) {
+    const int phase = (yy / 2) % 2 * 2;  // diagonal grid: every 4th pixel, every 2nd row
+    for (int xx = x + ((phase - x) % 4 + 4) % 4; xx < x + w; xx += 4) r.drawPixel(xx, yy);
+  }
+}
+
+// Dark-gray ring with the event's fill inside.
+void fillEventBox(const GfxRenderer& r, const int x, const int y, const int w, const int h, const int radius,
+                  const bool family) {
+  r.fillRoundedRect(x, y, w, h, radius, Color::DarkGray);
+  if (family) {
+    r.fillRoundedRect(x + 1, y + 1, w - 2, h - 2, radius - 1, Color::LightGray);
+  } else {
+    r.fillRoundedRect(x + 1, y + 1, w - 2, h - 2, radius - 1, Color::White);
+    fillFaint(r, x + 2, y + 2, w - 4, h - 4);
+  }
+}
+
 void drawEventBox(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
   const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
   const bool textBlack = true;  // black reads better on the dithered dark gray than white
   if (e.isCancelled) {
     r.fillRect(x, y, w, h, false);
     dottedRect(r, x, y, w, h);
-  } else if (family) {
-    r.fillRoundedRect(x, y, w, h, 4, Color::DarkGray);
   } else {
-    // Border only slightly darker than the fill: a dithered dark-gray ring.
-    r.fillRoundedRect(x, y, w, h, 4, Color::DarkGray);
-    r.fillRoundedRect(x + 1, y + 1, w - 2, h - 2, 3, Color::LightGray);
+    fillEventBox(r, x, y, w, h, 4, family);
   }
   if (e.isImportant()) r.fillRect(x, y, 4, h, textBlack);
 
@@ -394,7 +412,7 @@ int drawBars(const GfxRenderer& r, const DaySplit& d, int x, int w, int y, int b
     if (e->isCancelled) {
       dottedRect(r, x, y, w, barH);
     } else {
-      r.fillRoundedRect(x, y, w, barH, 4, family ? Color::DarkGray : Color::LightGray);
+      fillEventBox(r, x, y, w, barH, 4, family);
     }
     const std::string t = r.truncatedText(UI_10_FONT_ID, e->subject.c_str(), w - 12);
     r.drawText(UI_10_FONT_ID, x + 6, y + 3, t.c_str(), true);
@@ -425,23 +443,27 @@ void drawAxis(const GfxRenderer& r, const Axis& a, int lineX0, int lineX1) {
 
 std::string shortDate(const std::string& iso);  // defined with the detail page
 
-// A box cut off by the bottom of the axis gets a torn lower edge and says where
-// the event really ends, so it does not read as ending at the edge.
+// A box cut off by the bottom of the axis stays open at the bottom (no lower
+// border, square corners) and carries a black pill saying where the event
+// really ends, so it does not read as ending at the edge.
 void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& dayIso, int x, int y, int w, int h) {
-  const int lh = r.getLineHeight(SMALL_FONT_ID);
-  constexpr int kTooth = 10;  // width of one tooth of the torn edge
-  constexpr int kDepth = 5;
-  // Torn edge: white teeth cut upwards into the bottom of the fill.
-  const int base = y + h - 1;
-  for (int tx = x; tx < x + w; tx += kTooth) {
-    for (int i = 0; i < kDepth; ++i) {
-      const int half = (kTooth / 2) * (kDepth - i) / kDepth;
-      const int cx = tx + kTooth / 2;
-      r.drawLine(std::max(x, cx - half), base - i, std::min(x + w - 1, cx + half), base - i, false);
-    }
+  const bool family = e.calendar == kFamilyCalendar && !e.isCancelled;
+  // Open bottom: the side rings run straight down, the fill reaches the edge.
+  constexpr int kOpen = 6;
+  const int oy = y + h - kOpen;
+  if (family) {
+    r.fillRectDither(x, oy, w, kOpen, Color::LightGray);
+  } else {
+    fillFaint(r, x, oy, w, kOpen);
   }
-  if (h < 3 * lh + kDepth) return;
+  if (!e.isCancelled) {
+    r.fillRectDither(x, oy, 1, kOpen, Color::DarkGray);
+    r.fillRectDither(x + w - 1, oy, 1, kOpen, Color::DarkGray);
+  }
 
+  const int lh = r.getLineHeight(SMALL_FONT_ID);
+  const int pillH = lh + 6;
+  if (h < 2 * lh + pillH) return;
   std::string text = "bis ";
   if (e.lastDate() != dayIso) {
     text += shortDate(e.lastDate());
@@ -449,16 +471,20 @@ void drawContinues(const GfxRenderer& r, const CalEvent& e, const std::string& d
   } else {
     text += hhmm(e.endMinutes() % (24 * 60));
   }
-  constexpr int kArrow = 10;
-  const int ax = x + 7;
-  const int ty = base - kDepth - lh - 2;
-  const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), w - (ax - x) - kArrow - 12, EpdFontFamily::BOLD);
-  // Fresh fill behind the line, in case notes run this far down.
-  r.fillRectDither(x + 1, ty - 2, w - 2, lh + 3, Color::LightGray);
-  // Filled down chevron, centred on the text line.
-  const int ay = ty + (lh - kArrow / 2) / 2;
-  for (int i = 0; i <= kArrow / 2; ++i) r.drawLine(ax + i, ay + i, ax + kArrow - i, ay + i, true);
-  r.drawText(SMALL_FONT_ID, ax + kArrow + 5, ty, t.c_str(), true, EpdFontFamily::BOLD);
+  constexpr int kArrow = 8;
+  const int maxText = w - 12 - kArrow - 18;
+  if (maxText < 30) return;
+  const std::string t = r.truncatedText(SMALL_FONT_ID, text.c_str(), maxText, EpdFontFamily::BOLD);
+  const int pillW = r.getTextWidth(SMALL_FONT_ID, t.c_str(), EpdFontFamily::BOLD) + kArrow + 18;
+  const int px = x + 6;
+  const int py = y + h - pillH - 6;
+  r.fillRoundedRect(px - 2, py - 2, pillW + 4, pillH + 4, pillH / 2 + 2, Color::White);  // keeps it off notes
+  r.fillRoundedRect(px, py, pillW, pillH, pillH / 2, Color::Black);
+  // White down chevron, then the end in white.
+  const int ax = px + 8;
+  const int ay = py + (pillH - kArrow / 2) / 2;
+  for (int i = 0; i <= kArrow / 2; ++i) r.drawLine(ax + i, ay + i, ax + kArrow - i, ay + i, false);
+  r.drawText(SMALL_FONT_ID, ax + kArrow + 5, py + 3, t.c_str(), false, EpdFontFamily::BOLD);
 }
 
 // An event that starts while a longer one runs lies on top of it, indented,
@@ -524,8 +550,7 @@ void drawPeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const D
     if (e.isCancelled) {
       r.drawRoundedRect(bx, by, bw, bh, 1, 3, true);
     } else {
-      r.fillRoundedRect(bx, by, bw, bh, 3, Color::DarkGray);
-      r.fillRoundedRect(bx + 1, by + 1, bw - 2, bh - 2, 2, Color::LightGray);
+      fillEventBox(r, bx, by, bw, bh, 3, e.calendar == kFamilyCalendar);
     }
     // As much of the title as fits, then the start time when the block is tall enough.
     if (bh >= lh + 2 && bw >= 24) {
