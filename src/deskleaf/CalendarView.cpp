@@ -806,15 +806,16 @@ int drawGuestMark(const GfxRenderer& r, const int x, const int y, const int line
   return d;
 }
 
-// Many attendees: per company a bold heading with the head count and a rule to
-// the right edge, the names indented below in two columns read downwards; a
+// Many attendees: per company a heading in the bold UI font with the head count
+// (the small font has no bold cut), the names below in two columns read downwards; a
 // circled e marks guests, "×2" people invited with two addresses. What does
 // not fit before `bottom` ends in "+N weitere".
 int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& attendees, const int invited,
                         const int x, int y, const int w, const int bottom) {
   const int smallH = r.getLineHeight(SMALL_FONT_ID);
   const int rowH = smallH + 2;  // small: a big meeting should not push the notes away
-  constexpr int kIndent = 12;
+  constexpr int kIndent = 0;
+  const int headH = r.getLineHeight(UI_10_FONT_ID);
   constexpr int kGap = 14;
   const int colW = (w - kIndent - kGap) / 2;
   y += 6;
@@ -831,15 +832,13 @@ int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& at
   const auto groups = groupAttendees(attendees);
   for (size_t gi = 0; gi < groups.size(); ++gi) {
     const AttendeeGroup& g = groups[gi];
-    if (y + smallH + rowH > bottom) break;
-    y += gi ? 6 : 2;
-    // Heading: "Signal-Iduna · 9" and a thin rule to the right edge.
+    y += gi ? 10 : 4;  // the gap separates the groups
+    if (y + headH + rowH > bottom) break;
+    // Heading: "Signal-Iduna · 9".
     const std::string head =
         (g.company.empty() ? std::string("Weitere") : g.company) + " \xC2\xB7 " + std::to_string(g.people.size());
-    r.drawText(SMALL_FONT_ID, x, y, head.c_str(), true, EpdFontFamily::BOLD);
-    const int ruleX = x + r.getTextWidth(SMALL_FONT_ID, head.c_str(), EpdFontFamily::BOLD) + 8;
-    if (ruleX < x + w) r.drawLine(ruleX, y + smallH / 2 + 1, x + w, y + smallH / 2 + 1, true);
-    y += smallH + 1;
+    r.drawText(UI_10_FONT_ID, x, y, head.c_str(), true, EpdFontFamily::BOLD);
+    y += headH;
 
     const int n = static_cast<int>(g.people.size());
     int rows = (n + 1) / 2;
