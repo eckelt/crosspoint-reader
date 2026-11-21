@@ -745,10 +745,16 @@ std::string attendeesLine(const std::vector<std::string>& attendees) {
   for (const std::string& a : attendees) {
     std::string name = a;
     std::string company;
-    const size_t open = a.rfind(" (");
-    if (open != std::string::npos && a.size() > open + 3 && a.back() == ')') {
-      name = a.substr(0, open);
-      company = a.substr(open + 2, a.size() - open - 3);
+    const size_t sep = a.find('\x1f');
+    if (sep != std::string::npos) {
+      name = a.substr(0, sep);
+      company = a.substr(sep + 1);
+    }
+    if (attendees.size() > 6) {
+      // "Franziska Isabell Voß" -> "Franziska V."
+      const size_t first = name.find(' ');
+      const size_t last = name.rfind(' ');
+      if (first != std::string::npos && last + 1 < name.size()) name = name.substr(0, first) + " " + name[last + 1] + ".";
     }
     auto it = std::find_if(groups.begin(), groups.end(), [&](const Group& g) { return g.company == company; });
     if (it == groups.end()) {

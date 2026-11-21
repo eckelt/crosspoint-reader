@@ -894,7 +894,9 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   y = drawField(r, "Organisation", e.organizerName(), x, y, tw, bottom, true);
   std::string others = attendeesLine(e.attendees);
   if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
-  y = drawField(r, "Teilnehmer", others, x,
+  const std::string label =
+      e.attendees.size() > 3 ? "Teilnehmer \xC2\xB7 " + std::to_string(e.attendees.size()) : std::string("Teilnehmer");
+  y = drawField(r, label.c_str(), others, x,
                 y, tw, bottom, true);
 
   if (blocks.empty()) return -1;

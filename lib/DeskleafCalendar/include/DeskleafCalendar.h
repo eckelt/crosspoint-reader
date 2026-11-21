@@ -113,8 +113,9 @@ struct CascadeBox {
 };
 std::vector<CascadeBox> layoutCascade(const std::vector<LayoutInput>& inputs, int headMinutes = 30);
 
-// Attendees grouped by the company the bridge puts in brackets:
-// {"Anna (Lotto24)", "Paul", "Max (Lotto24)"} -> "Lotto24: Anna, Max · Paul".
+// Attendees grouped by the company the bridge appends after a unit separator
+// (0x1F): {"Anna\x1fLotto24", "Paul", "Max\x1fLotto24"} -> "Lotto24: Anna, Max · Paul".
+// Past six people the names shrink to "Anna W." so a big meeting stays readable.
 std::string attendeesLine(const std::vector<std::string>& attendees);
 
 // --- Dates ---------------------------------------------------------------

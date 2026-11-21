@@ -221,11 +221,15 @@ static void testCascade() {
 
 
 static void testAttendeesLine() {
-  CHECK(attendeesLine({"Anna (Lotto24)", "Paul", "Max Muster (Lotto24)", "Bob (Tchibo)"}) ==
+  CHECK(attendeesLine({"Anna\x1fLotto24", "Paul", "Max Muster\x1fLotto24", "Bob\x1fTchibo"}) ==
         "Lotto24: Anna, Max Muster \xC2\xB7 Tchibo: Bob \xC2\xB7 Paul");
   CHECK(attendeesLine({"Paul", "Lisa"}) == "Paul, Lisa");
   CHECK(attendeesLine({}).empty());
-  CHECK(attendeesLine({"Team (intern) (Ecke)"}) == "Ecke: Team (intern)");
+  // Brackets in a display name are not a company.
+  CHECK(attendeesLine({"Nils Eckelt (Extern)"}) == "Nils Eckelt (Extern)");
+  // Seven and more: first name and initial.
+  CHECK(attendeesLine({"Franziska Isabell Voss\x1fSI", "Kai Dahl\x1fSI", "Ute\x1fSI", "A B", "C D", "E F", "G H"}) ==
+        "SI: Franziska V., Kai D., Ute \xC2\xB7 A B., C D., E F., G H.");
 }
 
 static void testDates() {
