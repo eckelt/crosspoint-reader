@@ -796,14 +796,22 @@ int drawField(const GfxRenderer& r, const char* label, const std::string& value,
   return drawLines(r, UI_10_FONT_ID, x, y, w, value, 3, bottom, true);
 }
 
-// A small circled "e": this person has a guest account at the customer.
+// A small circled "e": this person has a guest account at the customer. Drawn
+// pixel by pixel so the letter keeps clear of the 1 px ring; a hint, not a highlight.
 int drawGuestMark(const GfxRenderer& r, const int x, const int y, const int lineH) {
-  const int d = std::max(9, lineH * 2 / 3);
-  const int cy = y + (lineH - d) / 2 + 1;
-  r.drawRoundedRect(x, cy, d, d, 1, d / 2, true);
-  const int ew = r.getTextWidth(SMALL_FONT_ID, "e");
-  r.drawText(SMALL_FONT_ID, x + (d - ew) / 2, y - 1, "e", true);
-  return d;
+  static constexpr const char* kMark[] = {
+      ".....#####.....", "...##.....##...", "..#.........#..", ".#...........#.", ".#....###....#.",
+      "#....#...#....#", "#....#####....#", "#....#........#", "#....#...#....#", "#.....###.....#",
+      ".#...........#.", ".#...........#.", "..#.........#..", "...##.....##...", ".....#####.....",
+  };
+  constexpr int kSize = 15;
+  const int top = y + (lineH - kSize) / 2 + 1;
+  for (int row = 0; row < kSize; ++row) {
+    for (int col = 0; col < kSize; ++col) {
+      if (kMark[row][col] == '#') r.drawPixel(x + col, top + row);
+    }
+  }
+  return kSize;
 }
 
 // Many attendees: per company a heading in the bold UI font with the head count
@@ -854,7 +862,7 @@ int drawAttendeeColumns(const GfxRenderer& r, const std::vector<std::string>& at
       const int cx = x + kIndent + col * (colW + kGap);
       const int cy = y + row * rowH;
       const std::string times = p.addresses > 1 ? "\xC3\x97" + std::to_string(p.addresses) : std::string();
-      const int markW = (p.guest ? smallH * 2 / 3 + 4 : 0) + (times.empty() ? 0 : r.getTextWidth(SMALL_FONT_ID, times.c_str()) + 4);
+      const int markW = (p.guest ? 15 + 4 : 0) + (times.empty() ? 0 : r.getTextWidth(SMALL_FONT_ID, times.c_str()) + 4);
       const std::string name = r.truncatedText(SMALL_FONT_ID, p.name.c_str(), colW - markW);
       r.drawText(SMALL_FONT_ID, cx, cy, name.c_str(), true);
       int mx = cx + r.getTextWidth(SMALL_FONT_ID, name.c_str()) + 4;
