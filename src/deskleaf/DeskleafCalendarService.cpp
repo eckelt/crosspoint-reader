@@ -24,6 +24,7 @@
 #include <memory>
 
 #include "CalendarView.h"
+#include "DeskleafAutoUpdate.h"
 #include "DeskleafWifiSync.h"
 #include "CrossPointSettings.h"
 #include "util/TaskWatchdog.h"
@@ -359,12 +360,31 @@ view::Status viewStatus(const CalendarState& state) {
   s.lastAttemptEpoch = state.lastAttemptEpoch;
   s.via = state.lastVia;
   s.wifiResult = state.lastWifiResult;
+  static std::string notice;  // the sleep screen draws on this task before the next call
+  notice = updateNotice(state);
+  if (!notice.empty()) s.notice = notice.c_str();
   return s;
 }
 
 }  // namespace
 
 SyncPhase syncPhase() { return static_cast<SyncPhase>(g_phase.load()); }
+
+std::string updateNotice(const CalendarState& state) {
+  if (state.updatedEpoch <= 0 || static_cast<int64_t>(time(nullptr)) - state.updatedEpoch >= 12 * 3600) return {};
+  // The version up to the build suffix: "2.0.67", not "2.0.67-deskleaf-calendar-abc1234".
+  const std::string v = state.firmware.substr(0, state.firmware.find('-'));
+  return "Aktualisiert auf " + v;
+}
+
+bool CalendarService::takeDueUpdate(CalendarState& state, std::string& version) const {
+  if (!autoupdate::due(state.latestFirmware, state.lastUpdateAttempt)) return false;
+  state.lastUpdateAttempt = static_cast<int64_t>(time(nullptr));
+  state.sleepDayHash = 0;  // the install notice replaces the sleep screen; draw it again afterwards
+  saveState(state);
+  version = state.latestFirmware;
+  return true;
+}
 
 bool localToday(Date& out, struct tm* tmOut) {
   const time_t now = time(nullptr);
@@ -392,6 +412,9 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.lastAttemptEpoch = doc["lastAttempt"] | static_cast<int64_t>(0);
   state.lastVia = doc["lastVia"] | 0;
   state.lastWifiResult = doc["lastWifiResult"] | 0;
+  state.latestFirmware = doc["latestFirmware"] | "";
+  state.updatedEpoch = doc["updated"] | static_cast<int64_t>(0);
+  state.lastUpdateAttempt = doc["lastUpdateAttempt"] | static_cast<int64_t>(0);
   return true;
 }
 
@@ -434,6 +457,9 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["lastAttempt"] = state.lastAttemptEpoch;
   doc["lastVia"] = state.lastVia;
   doc["lastWifiResult"] = state.lastWifiResult;
+  doc["latestFirmware"] = state.latestFirmware;
+  doc["updated"] = state.updatedEpoch;
+  doc["lastUpdateAttempt"] = state.lastUpdateAttempt;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -480,7 +506,10 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   // A new firmware since the last sync counts as installed now (an OTA
   // reboots into the calendar soon after); the first sync only notes it.
   if (state.firmware != CROSSPOINT_VERSION) {
-    if (!state.firmware.empty()) noteActivity(ActivityType::FirmwareInstalled);
+    if (!state.firmware.empty()) {
+      noteActivity(ActivityType::FirmwareInstalled);
+      state.updatedEpoch = static_cast<int64_t>(time(nullptr));
+    }
     state.firmware = CROSSPOINT_VERSION;
     saveState(state);  // an aborted sync must not count the install twice
   }
@@ -520,6 +549,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     saveHistory(history);
   }
   takeTimezone(r.bridgeTz);
+  if (r.latestFirmware[0]) state.latestFirmware = r.latestFirmware;
   if (r.status == SyncStatus::BridgeNotFound) noteActivity(ActivityType::BridgeUnavailable);
 
   // No bridge: the same week frames over Wi-Fi from the Deskleaf worker, for the
@@ -538,6 +568,9 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
       const int http = wifisync::lastHttpStatus();
       state.lastWifiResult = static_cast<int16_t>(http > 0 ? http : -2);
+      // Without the bridge nobody announces releases: ask GitHub while Wi-Fi is up anyway.
+      const std::string newest = autoupdate::newestRelease();
+      if (!newest.empty()) state.latestFirmware = newest;
     }
     wifisync::leave();
     LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));

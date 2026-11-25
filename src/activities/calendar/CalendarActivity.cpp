@@ -1,5 +1,8 @@
 #include "CalendarActivity.h"
 
+#include <HalStorage.h>
+#include <esp_system.h>
+
 #if DESKLEAF_CALENDAR
 
 #include <GfxRenderer.h>
@@ -14,6 +17,7 @@
 
 #include "components/UITheme.h"
 #include "deskleaf/CalendarView.h"
+#include "deskleaf/DeskleafAutoUpdate.h"
 #include "fontIds.h"
 #include "util/TaskWatchdog.h"
 
@@ -67,6 +71,21 @@ void CalendarActivity::finishSync() {
       status == deskleaf::SyncStatus::NewPayload || status == deskleaf::SyncStatus::StoreFailed;
   ensureLoaded(weeksChanged || !hadClock);
   requestUpdate();
+  // A newer firmware the bridge announced: install it now, the calendar is idle.
+  std::string version;
+  if (deskleaf::CALENDAR.takeDueUpdate(state, version)) {
+    requestUpdateAndWait();  // the current view first; install() then shows its notice
+    bool installed = false;
+    {
+      RenderLock lock;  // install() draws its notice directly
+      installed = deskleaf::autoupdate::install(&renderer, version, nullptr);
+    }
+    if (installed) {
+      Storage.prepareForDeepSleep();
+      esp_restart();
+    }
+    requestUpdate();  // failed: back to the calendar, retried in an hour
+  }
 }
 
 void CalendarActivity::rangeFor(deskleaf::Date& first, deskleaf::Date& last) const {
@@ -372,6 +391,8 @@ void CalendarActivity::render(RenderLock&&) {
   status.lastAttemptEpoch = state.lastAttemptEpoch;
   status.via = state.lastVia;
   status.wifiResult = state.lastWifiResult;
+  const std::string notice = deskleaf::updateNotice(state);
+  if (!notice.empty()) status.notice = notice.c_str();
   status.showNowLine = true;
   status.peekNextDay = true;
   if (syncing) {

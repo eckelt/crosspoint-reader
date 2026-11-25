@@ -26,11 +26,17 @@ struct CalendarState {
   uint8_t lastVia = 0;           // how the last successful sync came: 0 unknown, 1 Bluetooth, 2 Wi-Fi
   // Wi-Fi of the last attempt: 0 not tried, -1 no known network, -2 no answer, else the HTTP status.
   int16_t lastWifiResult = 0;
+  std::string latestFirmware;      // newest release announced by the bridge (or seen over Wi-Fi)
+  int64_t updatedEpoch = 0;        // when a new firmware first ran; the header says so for a while
+  int64_t lastUpdateAttempt = 0;   // last automatic install attempt (retry at most hourly)
 };
 
 // What a running sync is doing, for the calendar header.
 enum class SyncPhase : uint8_t { Idle, Bluetooth, Wifi };
 SyncPhase syncPhase();
+
+// "Aktualisiert auf 2.0.67" for half a day after an install, "" otherwise.
+std::string updateNotice(const CalendarState& state);
 
 // When a sync may fall back to Wi-Fi (DeskleafWifiSync.h) after missing the bridge.
 enum class WifiFallback : uint8_t {
@@ -47,6 +53,9 @@ class CalendarService {
   // A multi-day event appears once even when several of those weeks list it.
   void loadRange(Date first, Date last, std::vector<CalEvent>& events) const;
   bool saveState(const CalendarState& state) const;
+  // An announced firmware is due for installation (DeskleafAutoUpdate.h): notes
+  // the attempt, forces the next sleep screen to redraw and returns the version.
+  bool takeDueUpdate(CalendarState& state, std::string& version) const;
 
   // One WREQ round trip for the week window around today (DeskleafCalendar.h):
   // changed weeks are stored, weeks outside the window removed. Reload with

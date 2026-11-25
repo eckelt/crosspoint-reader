@@ -383,6 +383,9 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d%s", lt.tm_hour, lt.tm_min, wifi);
     const int tw = r.getTextWidth(SMALL_FONT_ID, buf);
     r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), buf, false);
+  } else if (status.notice && !status.statusText) {
+    const int tw = r.getTextWidth(SMALL_FONT_ID, status.notice);
+    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), status.notice, false);
   }
   return h;
 }

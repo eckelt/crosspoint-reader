@@ -20,6 +20,7 @@ struct Status {
   int16_t wifiResult = 0;            // that attempt's Wi-Fi (CalendarState::lastWifiResult)
   bool showNowLine = false;          // interactive view only; the sleep screen would go stale
   bool peekNextDay = false;          // day view: a narrow column with the next day on the right
+  const char* notice = nullptr;      // second header line when nothing more urgent: "Aktualisiert auf 2.0.67"
 };
 
 // Tap target of a drawn event (day view), for the detail screen.

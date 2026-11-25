@@ -40,6 +40,7 @@ struct Rx {
   bool force = false;
   int64_t bridgeEpoch = 0;  // applied on the caller task, not in the NimBLE host task
   std::string bridgeTz;
+  std::string latestFirmware;
   std::string header;       // control lines may be split across notifications
   uint32_t lastChunkMs = 0;
   std::atomic<bool> done{false};
@@ -86,6 +87,9 @@ void processChunk(const uint8_t* data, size_t len) {
         progressed = true;
       } else if (takeLine(rx.header, "TZ:", value)) {
         rx.bridgeTz = value;
+        progressed = true;
+      } else if (takeLine(rx.header, "FW:", value)) {
+        rx.latestFirmware = value;
         progressed = true;
       } else if (rx.header.compare(0, 5, "SAME\n") == 0) {
         rx.unchanged = true;
@@ -145,6 +149,7 @@ void resetRx() {
   rx.active = rx.force = false;
   rx.bridgeEpoch = 0;
   rx.bridgeTz.clear();
+  rx.latestFirmware.clear();
   rx.header.clear();
   rx.done = rx.unchanged = rx.oom = rx.connected = false;
   rx.lastChunkMs = millis();
@@ -262,6 +267,7 @@ SyncResult syncWithBridge(const char* requestLine, const AbortCheck shouldAbort,
     }
     const int64_t epoch = rx.bridgeEpoch;
     snprintf(result.bridgeTz, sizeof(result.bridgeTz), "%s", rx.bridgeTz.c_str());
+    snprintf(result.latestFirmware, sizeof(result.latestFirmware), "%s", rx.latestFirmware.c_str());
     xSemaphoreGive(rx.mutex);
     // settimeofday + NVS write stay off the NimBLE host task's small stack.
     if (epoch > 1700000000LL) {

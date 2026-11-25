@@ -1,6 +1,7 @@
 #if DESKLEAF_CALENDAR
 #include <esp_sleep.h>
 
+#include "deskleaf/DeskleafAutoUpdate.h"
 #include "deskleaf/DeskleafCalendarService.h"
 #include "deskleaf/QrSleep.h"
 #endif
@@ -599,6 +600,20 @@ static void runCalendarTimerWake() {
     esp_restart();
   }
   trustedtime::note();
+  deskleaf::autoupdate::confirmHealthy();  // a fresh install got this far
+  // A firmware the bridge announced: install it now and boot it on a wake in a minute.
+  {
+    deskleaf::CalendarState st;
+    deskleaf::CALENDAR.loadState(st);
+    std::string version;
+    if (deskleaf::CALENDAR.takeDueUpdate(st, version) &&
+        deskleaf::autoupdate::install(&renderer, version, [] { return gpio.rawInputActive(); })) {
+      display.deepSleep();
+      Storage.prepareForDeepSleep();
+      esp_sleep_enable_timer_wakeup(60ULL * 1000000ULL);
+      powerManager.startDeepSleep(gpio);
+    }
+  }
   display.deepSleep();
   Storage.prepareForDeepSleep();
   deskleaf::CALENDAR.armWakeTimer(/*firstAfterSleep=*/false);
@@ -608,6 +623,9 @@ static void runCalendarTimerWake() {
 
 void setup() {
   BoardConfig::holdPowerRails();
+#if DESKLEAF_CALENDAR
+  deskleaf::autoupdate::bootGuard();  // rolls a crashing fresh install back
+#endif
 
 #ifdef ENABLE_SERIAL_LOG
 #ifdef CROSSPOINT_WAIT_FOR_USB_SERIAL
@@ -907,6 +925,9 @@ void loop() {
   const unsigned long loopStartTime = millis();
   static unsigned long lastMemPrint = 0;
 
+#if DESKLEAF_CALENDAR
+  if (millis() > 60000) deskleaf::autoupdate::confirmHealthy();  // a minute up: the new firmware works
+#endif
   gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   mappedInputManager.update();
 
