@@ -4,7 +4,7 @@
 //   device -> bridge  REQ:<semanticHash hex8>:<battery mV>\n            (one payload)
 //                     WREQ:<set hash hex8>:<mV>:<Monday>:<weeks>\n     (week frames,
 //                     see DeskleafCalendar.h)
-//   bridge -> device  TIME:<epoch>\n  TZ:<posix>\n  [FW:<newest release>\n]
+//   bridge -> device  TIME:<epoch>\n  TZ:<posix>\n  [FW:<newest release>\n]  [INBOX:<files>\n]
 //                     then SAME\n  or  LEN[F]:<n>\n<body...>
 // One blocking call per sync; the page turner owns the radio only while a book
 // is open, so callers run this from the calendar activity or the timer wake.
@@ -34,6 +34,7 @@ struct SyncResult {
   bool forceRedraw = false;  // LENF header
   char bridgeTz[64] = "";    // POSIX TZ the bridge sent, empty if none
   char latestFirmware[24] = "";  // newest firmware release the bridge knows of, empty if none
+  int inboxFiles = 0;            // files waiting in the display inbox (fetched over Wi-Fi)
   char* payload = nullptr;   // NUL-terminated body, owned; release with freePayload()
   size_t payloadLen = 0;
   size_t preambleSent = 0;   // leading preamble lines the bridge accepted

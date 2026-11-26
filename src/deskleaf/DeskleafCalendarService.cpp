@@ -370,8 +370,21 @@ view::Status viewStatus(const CalendarState& state) {
 
 SyncPhase syncPhase() { return static_cast<SyncPhase>(g_phase.load()); }
 
+// The header says what the inbox brought: "Tag 2.epub" or "Tag 2.epub +1".
+void noteInbox(CalendarState& state, const std::vector<std::string>& saved) {
+  if (saved.empty()) return;
+  state.inboxNote = saved.back();
+  if (saved.size() > 1) state.inboxNote += " +" + std::to_string(saved.size() - 1);
+  state.inboxEpoch = static_cast<int64_t>(time(nullptr));
+}
+
 std::string updateNotice(const CalendarState& state) {
-  if (state.updatedEpoch <= 0 || static_cast<int64_t>(time(nullptr)) - state.updatedEpoch >= 12 * 3600) return {};
+  const int64_t now = static_cast<int64_t>(time(nullptr));
+  const bool fresh = state.updatedEpoch > 0 && now - state.updatedEpoch < 12 * 3600;
+  const bool inbox = !state.inboxNote.empty() && now - state.inboxEpoch < 12 * 3600;
+  // The newer of the two.
+  if (inbox && (!fresh || state.inboxEpoch >= state.updatedEpoch)) return "Neu: " + state.inboxNote;
+  if (!fresh) return {};
   // The version up to the build suffix: "2.0.67", not "2.0.67-deskleaf-calendar-abc1234".
   const std::string v = state.firmware.substr(0, state.firmware.find('-'));
   return "Aktualisiert auf " + v;
@@ -415,6 +428,8 @@ bool CalendarService::loadState(CalendarState& state) const {
   state.latestFirmware = doc["latestFirmware"] | "";
   state.updatedEpoch = doc["updated"] | static_cast<int64_t>(0);
   state.lastUpdateAttempt = doc["lastUpdateAttempt"] | static_cast<int64_t>(0);
+  state.inboxNote = doc["inboxNote"] | "";
+  state.inboxEpoch = doc["inboxEpoch"] | static_cast<int64_t>(0);
   return true;
 }
 
@@ -460,6 +475,8 @@ bool CalendarService::saveState(const CalendarState& state) const {
   doc["latestFirmware"] = state.latestFirmware;
   doc["updated"] = state.updatedEpoch;
   doc["lastUpdateAttempt"] = state.lastUpdateAttempt;
+  doc["inboxNote"] = state.inboxNote;
+  doc["inboxEpoch"] = state.inboxEpoch;
   String out;
   serializeJson(doc, out);
   Storage.ensureDirectoryExists(kDir);
@@ -568,9 +585,10 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
       const int http = wifisync::lastHttpStatus();
       state.lastWifiResult = static_cast<int16_t>(http > 0 ? http : -2);
-      // Without the bridge nobody announces releases: ask GitHub while Wi-Fi is up anyway.
+      // Without the bridge nobody announces releases or inbox files: check both while Wi-Fi is up.
       const std::string newest = autoupdate::newestRelease();
       if (!newest.empty()) state.latestFirmware = newest;
+      noteInbox(state, wifisync::fetchInbox());
     }
     wifisync::leave();
     LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));
@@ -604,6 +622,12 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   state.payloadHash = weekSetHash(windowOf(today, index));
   state.lastStatus = static_cast<uint8_t>(r.status);
+  // Files the bridge says are waiting: a short Wi-Fi visit to fetch them.
+  if (r.inboxFiles > 0 && r.status != SyncStatus::Aborted && wifisync::configured()) {
+    g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
+    if (wifisync::join(shouldAbort)) noteInbox(state, wifisync::fetchInbox());
+    wifisync::leave();
+  }
   freePayload(r);
   if (r.status != SyncStatus::Aborted) saveState(state);
   return r.status;

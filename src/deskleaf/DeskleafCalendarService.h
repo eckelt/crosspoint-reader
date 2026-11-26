@@ -29,13 +29,15 @@ struct CalendarState {
   std::string latestFirmware;      // newest release announced by the bridge (or seen over Wi-Fi)
   int64_t updatedEpoch = 0;        // when a new firmware first ran; the header says so for a while
   int64_t lastUpdateAttempt = 0;   // last automatic install attempt (retry at most hourly)
+  std::string inboxNote;           // what the last inbox fetch brought, for the header
+  int64_t inboxEpoch = 0;
 };
 
 // What a running sync is doing, for the calendar header.
 enum class SyncPhase : uint8_t { Idle, Bluetooth, Wifi };
 SyncPhase syncPhase();
 
-// "Aktualisiert auf 2.0.67" for half a day after an install, "" otherwise.
+// Header notice: "Aktualisiert auf 2.0.67" or "Neu: Tag 2.epub" for half a day, "" otherwise.
 std::string updateNotice(const CalendarState& state);
 
 // When a sync may fall back to Wi-Fi (DeskleafWifiSync.h) after missing the bridge.

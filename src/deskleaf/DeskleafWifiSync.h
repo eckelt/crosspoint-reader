@@ -5,6 +5,7 @@
 // the feed token on the first line, optionally the worker's base URL on the
 // second (default https://mcp.deskleaf.one).
 #include <string>
+#include <vector>
 
 #include "DeskleafBle.h"
 
@@ -23,6 +24,11 @@ SyncStatus fetchWeeks(const std::string& monday, int weeks, std::string& body);
 
 // HTTP status of the last fetchWeeks(), 0 when the worker never answered.
 int lastHttpStatus();
+
+// Files waiting in the worker's display inbox (GET /display/inbox), saved to the
+// SD card and checked off: a .bmp becomes /sleep.bmp, books go to /Books, the
+// rest to /Inbox. Returns the names saved, in arrival order. Needs Wi-Fi up.
+std::vector<std::string> fetchInbox();
 
 // Disconnects and switches the radio off.
 void leave();
