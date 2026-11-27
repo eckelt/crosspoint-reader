@@ -73,6 +73,7 @@ const uint8_t* springboardIcon(const UIIcon icon, const std::string& label) {
   if (label == "Klicker") return PresentationIcon;
   if (label == "QR-Codes") return QrCodeIcon;
   if (label == "Checklisten") return ChecklistIcon;
+  if (label == "Spick") return SpickIcon;
   switch (icon) {
     case Folder:
       return FolderIcon;
@@ -133,7 +134,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 4;  // Calendar, Clicker, QR codes, checklists
+    count += 5;  // Calendar, Clicker, QR codes, checklists, Spick
   }
   return count;
 }
@@ -440,6 +441,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::CHECKLISTS:
         onChecklistsOpen();
         break;
+      case HomeMenuItem::SPICK:
+        onSpickOpen();
+        break;
       default:
         break;
     }
@@ -676,6 +680,8 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.push_back(Image);
     menuItems.push_back("Checklisten");
     menuIcons.push_back(Book);
+    menuItems.push_back("Spick");
+    menuIcons.push_back(Book);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -756,5 +762,11 @@ void HomeActivity::onQrCodesOpen() {
 void HomeActivity::onChecklistsOpen() {
 #if DESKLEAF_CALENDAR
   activityManager.goToChecklists();
+#endif
+}
+
+void HomeActivity::onSpickOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToSpick();
 #endif
 }

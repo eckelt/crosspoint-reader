@@ -26,8 +26,8 @@ SyncStatus fetchWeeks(const std::string& monday, int weeks, std::string& body);
 int lastHttpStatus();
 
 // Files waiting in the worker's display inbox (GET /display/inbox), saved to the
-// SD card and checked off: a .bmp becomes /sleep.bmp, books go to /Books, the
-// rest to /Inbox. Returns the names saved, in arrival order. Needs Wi-Fi up.
+// SD card and checked off: a .bmp becomes /sleep.bmp, books go to /Books, notes
+// to /Spick (named by their inbox id, so they sort by arrival), the rest to /Inbox. Returns the names saved, in arrival order. Needs Wi-Fi up.
 std::vector<std::string> fetchInbox();
 
 // Disconnects and switches the radio off.

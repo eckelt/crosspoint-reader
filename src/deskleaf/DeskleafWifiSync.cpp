@@ -163,6 +163,13 @@ std::vector<std::string> fetchInbox() {
     std::string dest;
     if (kind == "sleep") {
       dest = "/sleep.bmp";
+    } else if (kind == "note") {
+      Storage.ensureDirectoryExists("/Spick");
+      std::string file = id;
+      for (char& c : file) {
+        if (c == '/' || c == '\\') c = '-';
+      }
+      dest = "/Spick/" + file;
     } else if (kind == "book") {
       Storage.ensureDirectoryExists("/Books");
       dest = "/Books/" + name;
