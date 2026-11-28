@@ -173,6 +173,23 @@ void applyQueue(TodoList& list, std::vector<TodoChange>& queue) {
               queue.end());
 }
 
+void settleChange(std::vector<TodoChange>& queue, const TodoChange& change, const bool sent) {
+  auto entry = std::find_if(queue.begin(), queue.end(), [&](const TodoChange& c) { return c.id == change.id; });
+  if (entry != queue.end()) {
+    // Same state: this is the change that went out. Other state: a newer tap, still to send.
+    if (entry->done == change.done) queue.erase(entry);
+    return;
+  }
+  if (sent) queue.push_back({change.id, !change.done});
+}
+
+bool todoVisitDue(const bool tapsWaiting, const bool listIsToday, const int64_t lastAttempt, const int64_t now) {
+  if (!tapsWaiting && listIsToday) return false;
+  constexpr int64_t kRetryWithTaps = 15 * 60;
+  constexpr int64_t kRetryStaleList = 3 * 3600;
+  return now - lastAttempt >= (tapsWaiting ? kRetryWithTaps : kRetryStaleList);
+}
+
 SendOutcome classifySend(const int httpStatus, const std::string& body, const TodoChange& change) {
   if (httpStatus == 200) {
     const std::string expected = change.id + (change.done ? "\tdone" : "\topen");

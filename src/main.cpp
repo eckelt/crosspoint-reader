@@ -3,6 +3,7 @@
 
 #include "deskleaf/DeskleafAutoUpdate.h"
 #include "deskleaf/DeskleafCalendarService.h"
+#include "deskleaf/DeskleafNetJob.h"
 #include "deskleaf/QrSleep.h"
 #endif
 #include <Arduino.h>
@@ -488,6 +489,7 @@ void enterDeepSleep(bool fromTimeout = false) {
 #if DESKLEAF_CALENDAR
   // A calendar sync may hold the BLE stack; it ends before the page turner stops the radio.
   deskleaf::bgsync::stop();
+  deskleaf::netjob::stop();  // a Spick or Heute fetch holds Wi-Fi
 #endif
   const bool bluetoothStopped = bleturner::beforeSleep(2000);
   if (!bluetoothStopped) LOG_ERR("SLP", "Bluetooth did not stop; deferring sleep-event delivery");

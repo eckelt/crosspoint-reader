@@ -10,7 +10,7 @@
 #include <cstdio>
 
 #include "components/UITheme.h"
-#include "deskleaf/DeskleafTodos.h"
+#include "deskleaf/DeskleafNetJob.h"
 #include "deskleaf/DeskleafWifiSync.h"
 #include "fontIds.h"
 
@@ -60,8 +60,12 @@ void SpickActivity::onEnter() {
   requestUpdate();
 }
 
-// Firmware before 2.0.69 saved notes to /Inbox under their plain name.
+// Firmware before 2.0.69 saved notes to /Inbox under their plain name. Runs
+// once; later .md files in /Inbox are the user's or kind "file" and stay.
+// Can go once the device has run it.
 void SpickActivity::rescueInboxNotes() {
+  constexpr const char* kDone = "/.crosspoint/deskleaf/spick-rescued";
+  if (Storage.exists(kDone)) return;
   for (const String& f : Storage.listFiles("/Inbox", 200)) {
     const std::string name(f.c_str());
     if (name.size() <= 3 || name.compare(name.size() - 3, 3, ".md") != 0 || name[0] == '.') continue;
@@ -69,6 +73,8 @@ void SpickActivity::rescueInboxNotes() {
     // "0-" sorts before every arrival id: rescued notes count as the oldest.
     Storage.rename(("/Inbox/" + name).c_str(), (std::string(kDir) + "/0-" + name).c_str());
   }
+  Storage.ensureDirectoryExists("/.crosspoint/deskleaf");
+  Storage.writeFile(kDone, String("1"));
 }
 
 void SpickActivity::loadNotes() {
@@ -168,19 +174,21 @@ void SpickActivity::fetchNow() {
     return;
   }
   if (fetching) return;
-  fetching = deskleaf::todos::background::start(/*inbox=*/true, /*todos=*/false);
+  fetching = deskleaf::netjob::start(/*inbox=*/true, /*todos=*/false);
 }
 
 void SpickActivity::loop() {
   using B = MappedInputManager::Button;
   size_t saved = 0;
-  if (fetching && deskleaf::todos::background::finished(&saved)) {
+  bool online = false;
+  if (fetching && deskleaf::netjob::finished(&saved, &online)) {
     fetching = false;
-    message = saved == 0 ? std::string("Keine neuen Zettel") : std::string();
-    if (saved > 0) {
-      loadNotes();
-      if (!files.empty()) openNote(0);  // the newest is what was just sent
-    }
+    RenderLock lock;  // the render task reads files, lines and pageStarts
+    const size_t before = files.size();
+    if (saved > 0) loadNotes();
+    const bool newNotes = files.size() > before;  // a book or sleep image is no new note
+    message = !online ? std::string("Kein WLAN") : newNotes ? std::string() : std::string("Keine neuen Zettel");
+    if (newNotes) openNote(0);  // the newest is what was just sent
     requestUpdate();
   }
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {

@@ -25,6 +25,7 @@
 
 #include "CalendarView.h"
 #include "DeskleafAutoUpdate.h"
+#include "DeskleafNetJob.h"
 #include "DeskleafTodos.h"
 #include "DeskleafWifiSync.h"
 #include "CrossPointSettings.h"
@@ -589,8 +590,11 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       // Without the bridge nobody announces releases or inbox files: check both while Wi-Fi is up.
       const std::string newest = autoupdate::newestRelease();
       if (!newest.empty()) state.latestFirmware = newest;
-      noteInbox(state, wifisync::fetchInbox());
-      if (todos::wanted(isoString(today))) todos::syncOverWifi();
+      noteInbox(state, wifisync::fetchInbox(shouldAbort));
+      if (todos::wanted(isoString(today))) {
+        todos::noteAttempt();
+        todos::syncOverWifi(shouldAbort);
+      }
     }
     wifisync::leave();
     LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));
@@ -630,9 +634,10 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   const bool todosDue = todos::wanted(isoString(today));
   if ((inboxWaiting || todosDue) && r.status != SyncStatus::Aborted && wifisync::configured()) {
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
+    if (todosDue) todos::noteAttempt();  // before joining: no network in range counts too
     if (wifisync::join(shouldAbort)) {
-      if (inboxWaiting) noteInbox(state, wifisync::fetchInbox());
-      if (todosDue) todos::syncOverWifi();
+      if (inboxWaiting) noteInbox(state, wifisync::fetchInbox(shouldAbort));
+      if (todosDue) todos::syncOverWifi(shouldAbort);
     }
     wifisync::leave();
   }
@@ -730,7 +735,7 @@ void waitDone() {
 }  // namespace
 
 bool start(const CalendarState& from) {
-  if (job) return false;
+  if (job || netjob::running()) return false;  // one owner of the radio
   job = new (std::nothrow) Job();
   if (!job) return false;
   job->state = from;

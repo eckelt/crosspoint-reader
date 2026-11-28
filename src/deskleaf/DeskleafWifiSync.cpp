@@ -145,7 +145,7 @@ int getText(const std::string& path, std::string& body, const size_t maxBytes) {
   return HttpDownloader::lastStatus();
 }
 
-std::vector<std::string> fetchInbox() {
+std::vector<std::string> fetchInbox(const AbortCheck shouldAbort) {
   std::vector<std::string> saved;
   std::string token, base;
   if (!readConfig(token, base)) return saved;
@@ -159,6 +159,7 @@ std::vector<std::string> fetchInbox() {
   const auto entries = feed::parseInboxListing(listing);
   LOG_INF("DSK", "Inbox: %u waiting", static_cast<unsigned>(entries.size()));
   for (const feed::InboxEntry& entry : entries) {
+    if (shouldAbort && shouldAbort()) break;
     const std::string dest = feed::inboxDestination(entry);
     const size_t slash = dest.rfind('/');
     if (slash > 0) Storage.ensureDirectoryExists(dest.substr(0, slash).c_str());

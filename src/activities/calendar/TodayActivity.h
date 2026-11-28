@@ -35,4 +35,5 @@ class TodayActivity final : public Activity {
   int page = 0;
   unsigned long syncAt = 0;     // millis() when a debounced sync should start, 0 = none
   bool syncing = false;
+  size_t waiting = 0;           // taps not yet sent, refreshed on every change
 };

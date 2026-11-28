@@ -115,7 +115,47 @@ static void testSendOutcome() {
   CHECK(todoActionPath(undo) == "/display/todos/a1b2c3/undo");
 }
 
+static void testSettle() {
+  const TodoChange a{"aaaaaa", true};
+  const TodoChange b{"bbbbbb", true};
+  // Nothing happened meanwhile: the sent change leaves.
+  std::vector<TodoChange> q{a, b};
+  settleChange(q, a, true);
+  CHECK(q.size() == 1 && q[0].id == "bbbbbb");
+  // A tap on another item during the send survives.
+  q = {a};
+  q.push_back(b);
+  settleChange(q, a, true);
+  CHECK(q.size() == 1 && q[0].id == "bbbbbb");
+  // Tapped back during the send: the server has it done, the user wants it open.
+  q = {};
+  settleChange(q, a, true);
+  CHECK(q.size() == 1 && q[0].id == "aaaaaa" && !q[0].done);
+  // Tapped back and again: same state as sent, nothing left.
+  q = {a};
+  settleChange(q, a, true);
+  CHECK(q.empty());
+  // A stale change that was tapped back: nothing to send.
+  q = {};
+  settleChange(q, a, false);
+  CHECK(q.empty());
+  // Other state queued: a newer tap, kept.
+  q = {{"aaaaaa", false}};
+  settleChange(q, a, true);
+  CHECK(q.size() == 1 && !q[0].done);
+}
+
+static void testVisitDue() {
+  CHECK(!todoVisitDue(false, true, 0, 100000));
+  CHECK(todoVisitDue(true, true, 0, 15 * 60));
+  CHECK(!todoVisitDue(true, true, 1, 15 * 60));
+  CHECK(!todoVisitDue(false, false, 0, 3 * 3600 - 1));
+  CHECK(todoVisitDue(false, false, 0, 3 * 3600));
+}
+
 int runFeedTests() {
+  testSettle();
+  testVisitDue();
   testInboxListing();
   testTodoParsing();
   testTodoQueue();

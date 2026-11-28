@@ -70,6 +70,16 @@ bool toggleTodo(TodoList& list, std::vector<TodoChange>& queue, const std::strin
 // it are dropped from the queue (the server would refuse them anyway).
 void applyQueue(TodoList& list, std::vector<TodoChange>& queue);
 
+// After `change` went out (sent) or was refused as stale, against the queue as
+// it is now: taps made during the send may have changed it. A matching entry
+// is dropped. A missing one means the item was tapped back meanwhile, so a sent
+// change needs its reverse queued.
+void settleChange(std::vector<TodoChange>& queue, const TodoChange& change, bool sent);
+
+// A Wi-Fi visit for the to-dos is due: taps wait (retry after 15 min) or the
+// stored list is not today's (retry after 3 h). Times in epoch seconds.
+bool todoVisitDue(bool tapsWaiting, bool listIsToday, int64_t lastAttempt, int64_t now);
+
 // What one GET .../done or .../undo answer means for the queue.
 enum class SendOutcome : uint8_t {
   Sent,   // 200 with the expected "<id>\t<state>": drop the change

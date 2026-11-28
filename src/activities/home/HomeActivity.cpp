@@ -135,7 +135,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 6;  // Calendar, Clicker, QR codes, checklists, Spick, today
+    count += 6;  // Calendar, Clicker, QR codes, Checklists, Spick, Heute
   }
   return count;
 }

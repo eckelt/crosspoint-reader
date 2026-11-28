@@ -13,6 +13,7 @@
 
 #include "components/UITheme.h"
 #include "deskleaf/DeskleafCalendarService.h"
+#include "deskleaf/DeskleafNetJob.h"
 #include "deskleaf/DeskleafTodos.h"
 #include "fontIds.h"
 
@@ -49,12 +50,16 @@ void TodayActivity::onEnter() {
   reload();
   // An old list or waiting taps: fetch right away, the stored list shows meanwhile.
   deskleaf::Date today{};
-  if (deskleaf::localToday(today) && deskleaf::todos::wanted(deskleaf::isoString(today))) syncSoon(0);
+  if (deskleaf::localToday(today) && deskleaf::todos::wanted(deskleaf::isoString(today), /*userIsLooking=*/true)) {
+    syncSoon(0);
+  }
   requestUpdate();
 }
 
 void TodayActivity::reload() {
+  RenderLock lock;  // the render task reads list, rows and pageStarts
   hasList = deskleaf::todos::load(list);
+  waiting = deskleaf::todos::pending();
   layout();
 }
 
@@ -101,15 +106,19 @@ void TodayActivity::syncSoon(const unsigned long delayMs) { syncAt = millis() + 
 
 void TodayActivity::loop() {
   using B = MappedInputManager::Button;
-  if (syncing && deskleaf::todos::background::finished()) {
+  if (syncing && deskleaf::netjob::finished()) {
     syncing = false;
     reload();
     requestUpdate();
   }
   if (!syncing && syncAt != 0 && static_cast<long>(millis() - syncAt) >= 0) {
-    syncAt = 0;
-    syncing = deskleaf::todos::background::start(/*inbox=*/false, /*todos=*/true);
-    requestUpdate();
+    if (deskleaf::netjob::start(/*inbox=*/false, /*todos=*/true)) {
+      syncAt = 0;
+      syncing = true;
+      requestUpdate();
+    } else {
+      syncAt = deskleaf::netjob::running() ? millis() + 1000 : 0;  // busy: try again; not configured: give up
+    }
   }
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
     onGoHome(HomeMenuItem::TODAY);
@@ -137,7 +146,13 @@ void TodayActivity::loop() {
       const int last = page + 1 < pages ? pageStarts[page + 1] : static_cast<int>(rows.size());
       for (int r = first; r < last; ++r) {
         if (rows[r].item < 0 || ty < rows[r].y || ty >= rows[r].y + rows[r].h) continue;
-        if (deskleaf::todos::toggle(list, list.items[rows[r].item].id)) {
+        bool flipped = false;
+        {
+          RenderLock lock;  // the render task reads item.done
+          flipped = deskleaf::todos::toggle(list, list.items[rows[r].item].id);
+          if (flipped) waiting = deskleaf::todos::pending();
+        }
+        if (flipped) {
           syncSoon(kSyncDelayMs);
           requestUpdate();
         }
@@ -162,7 +177,7 @@ void TodayActivity::render(RenderLock&&) {
 
   if (!hasList) {
     renderer.drawText(UI_10_FONT_ID, kMargin, lineY + 20,
-                      syncing ? "Hole die Liste\xE2\x80\xA6" : "Noch keine Liste. Confirm holt sie per WLAN.", true);
+                      syncing ? "Hole die Liste\xE2\x80\xA6" : "Noch keine Liste. Abgleich holt sie per WLAN.", true);
   } else if (list.items.empty()) {
     renderer.drawText(UI_10_FONT_ID, kMargin, lineY + 20, "Nichts offen f\xC3\xBCr heute.", true);
   }
@@ -207,7 +222,6 @@ void TodayActivity::render(RenderLock&&) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int footY = renderer.getScreenHeight() - metrics.buttonHintsHeight - 24;
   char foot[64] = "";
-  const size_t waiting = deskleaf::todos::pending();
   if (syncing) {
     std::snprintf(foot, sizeof(foot), "Gleiche ab\xE2\x80\xA6");
   } else if (waiting > 0) {

@@ -82,6 +82,27 @@ Deskleaf firmware OTA and battery-history messages are not used.
 Files in `/.crosspoint/deskleaf/` on the SD card: `weeks/<Monday>.json`,
 `weeks.idx` (Monday and hash per stored week) and `state.json`. The calendar
 app loads only the weeks its view shows; the sleep screen loads today's week.
+The to-do list adds `todos.txt` (the last list from the worker),
+`todo-queue.txt` (taps not yet sent) and `todo-attempt.txt` (time of the last
+Wi-Fi visit for it); `spick-rescued` marks the one-time move of old notes.
+
+## Spick and Heute
+
+Two home tiles use the worker over Wi-Fi (`deskleaf-feed.txt`, see above):
+
+- **Spick** shows Markdown notes from the display inbox
+  (`GET /display/inbox`). Opening it fetches in the background; a tap on the
+  title row fetches again. Notes are saved to `/Spick/<inbox id>` and checked
+  off (`/done`) only once they are on the card. Notes that firmware before
+  2.0.69 saved to `/Inbox` move to `/Spick` once.
+- **Heute** shows the daily to-do list (`GET /display/todos`). A tap ticks an
+  item or opens it again; taps are stored at once and sent in order
+  (`/display/todos/<id>/done` or `/undo`) a few seconds later or on the next
+  Wi-Fi visit, then the list is fetched again. The calendar sync also fetches
+  the list once a day or when taps wait, at most every 15 min (taps) or 3 h.
+
+Only one task drives Wi-Fi: screen changes and deep sleep stop a running
+fetch first.
 
 ## Updates
 

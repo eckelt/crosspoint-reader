@@ -34,6 +34,7 @@
 #include "calendar/ClickerActivity.h"
 #include "calendar/QrCodesActivity.h"
 #include "deskleaf/DeskleafCalendarService.h"
+#include "deskleaf/DeskleafNetJob.h"
 #endif
 #include "reader/ReaderActivity.h"
 #include "reader/RemoteTurnGate.h"
@@ -162,6 +163,7 @@ void ActivityManager::loop() {
 #if DESKLEAF_CALENDAR
     // A calendar sync may hold the BLE stack; it ends before the page turner touches the radio.
     deskleaf::bgsync::stop();
+    deskleaf::netjob::stop();
 #endif
     // The page turner's radio gives its heap back before the next screen allocates. Its teardown
     // can span loop passes and runs outside the render lock.
