@@ -16,6 +16,13 @@ namespace deskleaf::hirn {
 // nothing after an abort.
 bool fetchOverWifi(const std::string& monday, int weeks, bool force, AbortCheck shouldAbort);
 
+// The JSON of /display/knowledge as the bridge relays it (a K frame): stored
+// like a Wi-Fi fetch. False when it does not parse or a write failed.
+bool storeJson(const char* json, size_t len);
+
+// The hash of the stored notes for the WREQ line, "-" when there are none.
+std::string storedHash();
+
 // Worth a Wi-Fi visit of its own while the user looks: the last fetch is
 // older than a few minutes.
 bool due();

@@ -506,9 +506,38 @@ uint32_t weekSetHash(const std::vector<WeekEntry>& weeks) {
   return h;
 }
 
-bool parseWeekFrames(const char* body, const size_t len, std::vector<WeekFrame>& out) {
+namespace {
+// "<n>\n" at `p`: the length and the position after the newline, or false.
+bool frameLength(const char* body, const size_t len, size_t& p, size_t& n) {
+  n = 0;
+  bool digits = false;
+  while (p < len && body[p] >= '0' && body[p] <= '9') {
+    n = n * 10 + static_cast<size_t>(body[p] - '0');
+    if (n > len) return false;
+    digits = true;
+    ++p;
+  }
+  if (!digits || p >= len || body[p] != '\n') return false;
+  ++p;
+  return n <= len - p;
+}
+}  // namespace
+
+bool parseWeekFrames(const char* body, const size_t len, std::vector<WeekFrame>& out,
+                     std::vector<ExtraFrame>* extras) {
   size_t pos = 0;
   while (pos < len) {
+    // "K:<n>\n" / "T:<n>\n": the Brain's notes and the to-do list.
+    if (len - pos >= 4 && (body[pos] == 'K' || body[pos] == 'T') && body[pos + 1] == ':') {
+      size_t p = pos + 2;
+      size_t n = 0;
+      if (!frameLength(body, len, p, n)) return false;
+      if (extras) extras->push_back({body[pos], body + p, n});
+      p += n;
+      if (p < len && body[p] == '\n') ++p;
+      pos = p;
+      continue;
+    }
     // "W:YYYY-MM-DD:<n>\n"
     if (len - pos < 15 || body[pos] != 'W' || body[pos + 1] != ':' || body[pos + 12] != ':') return false;
     const std::string monday(body + pos + 2, 10);

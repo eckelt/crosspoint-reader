@@ -300,6 +300,25 @@ static void testWeekSync() {
   CHECK(!parseWeekFrames(truncated.data(), truncated.size(), frames));
   const std::string garbage = "LEN:3\nabc";
   CHECK(!parseWeekFrames(garbage.data(), garbage.size(), frames));
+  {
+    // Extra frames after the weeks: the Brain's notes (K) and the to-do list (T).
+    const std::string withExtras = "W:2026-11-02:2\n[]\nK:7\n{\"a\":1}\nT:3\n#x\n\n";
+    std::vector<WeekFrame> weeks;
+    std::vector<ExtraFrame> extras;
+    CHECK(parseWeekFrames(withExtras.data(), withExtras.size(), weeks, &extras));
+    CHECK(weeks.size() == 1 && extras.size() == 2);
+    CHECK(extras.size() == 2 && extras[0].tag == 'K' && std::string(extras[0].data, extras[0].len) == "{\"a\":1}");
+    CHECK(extras.size() == 2 && extras[1].tag == 'T' && std::string(extras[1].data, extras[1].len) == "#x\n");
+    weeks.clear();
+    CHECK(parseWeekFrames(withExtras.data(), withExtras.size(), weeks));  // skipped without a sink
+    CHECK(weeks.size() == 1);
+    const std::string onlyExtras = "T:2\n#y\n";
+    extras.clear();
+    weeks.clear();
+    CHECK(parseWeekFrames(onlyExtras.data(), onlyExtras.size(), weeks, &extras) && weeks.empty() && extras.size() == 1);
+    const std::string badExtra = "K:99\n{}\n";
+    CHECK(!parseWeekFrames(badExtra.data(), badExtra.size(), weeks, &extras));
+  }
 
   // A multi-day event repeats in both weeks; merging keeps one.
   CalEvent trip;

@@ -82,6 +82,30 @@ bool wanted(const std::string& todayIso, const bool userIsLooking) {
 
 void noteAttempt() { writeText(kAttemptPath, std::to_string(now())); }
 
+bool storeList(const std::string& text) {
+  feed::TodoList list;
+  if (!feed::parseTodos(text, list)) return false;
+  writeText(kListPath, text);
+  std::lock_guard<std::mutex> guard(queueMutex);
+  std::vector<feed::TodoChange> queue = loadQueue();
+  const size_t before = queue.size();
+  feed::applyQueue(list, queue);
+  if (queue.size() != before) saveQueue(queue);
+  LOG_INF("DSK", "To-dos via bridge: %u for %s", static_cast<unsigned>(list.items.size()), list.date.c_str());
+  return true;
+}
+
+uint32_t listHash() {
+  const std::string text = readText(kListPath);
+  if (text.empty()) return 0;
+  uint32_t h = 2166136261u;
+  for (const unsigned char c : text) {
+    h ^= c;
+    h *= 16777619u;
+  }
+  return h;
+}
+
 bool syncOverWifi(const AbortCheck shouldAbort) {
   // One change at a time against the queue as it is now: taps keep working meanwhile.
   for (size_t sends = 0; sends < kMaxSends; ++sends) {

@@ -182,9 +182,18 @@ struct WeekFrame {
   const char* json;  // points into the body; not NUL-terminated
   size_t len;
 };
+// After the weeks the bridge may add "K:<n>\n<n bytes>\n" (the Brain's notes,
+// JSON of /display/knowledge) and "T:<n>\n<n bytes>\n" (today's to-do list).
+struct ExtraFrame {
+  char tag;          // 'K' or 'T'
+  const char* data;  // points into the body; not NUL-terminated
+  size_t len;
+};
 // Splits a WREQ answer body into frames. False on malformed framing; frames
-// read before the error stay in `out`.
-bool parseWeekFrames(const char* body, size_t len, std::vector<WeekFrame>& out);
+// read before the error stay in `out`. Extra frames go to `extras`, or are
+// skipped without it.
+bool parseWeekFrames(const char* body, size_t len, std::vector<WeekFrame>& out,
+                     std::vector<ExtraFrame>* extras = nullptr);
 
 // Appends events of `more` that `into` does not hold yet. Weeks repeat the
 // multi-day events they share, so merging loaded weeks needs this.

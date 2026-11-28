@@ -3,6 +3,7 @@
 // on it. The list and the unsent taps live on the SD card, so ticking works
 // offline; the next Wi-Fi visit sends the taps in order, then fetches the list.
 // Formats and the queue rules: lib/DeskleafCalendar/DeskleafFeed.h.
+#include <cstdint>
 #include <string>
 
 #include "DeskleafBle.h"
@@ -28,6 +29,14 @@ bool wanted(const std::string& todayIso, bool userIsLooking = false);
 
 // Records a visit; call it before joining Wi-Fi for the to-dos.
 void noteAttempt();
+
+// Today's list as the bridge relays it (a T frame): stored like a fetched one,
+// taps on items no longer on it dropped. False when it does not parse.
+bool storeList(const std::string& text);
+
+// FNV-1a of the stored list for the WREQ line (0 without one), so the bridge
+// sends the list only when it changed.
+uint32_t listHash();
 
 // With Wi-Fi up: sends the waiting taps in order, then fetches the list.
 // True when a new list was stored.

@@ -52,6 +52,7 @@ bool readEntry(const char prefix, const std::string& key, const bool isNote, kno
   if (content.empty()) return false;
   return isNote ? knowledge::parseNote(content, out) : knowledge::parseEvent(content, out);
 }
+bool store(const knowledge::Answer& answer, const Stamp& stamp, int64_t now, AbortCheck shouldAbort);
 }  // namespace
 
 bool fetchOverWifi(const std::string& monday, const int weeks, const bool force, const AbortCheck shouldAbort) {
@@ -76,6 +77,28 @@ bool fetchOverWifi(const std::string& monday, const int weeks, const bool force,
     return false;
   }
   std::string().swap(body);
+  return store(*answer, stamp, now, shouldAbort);
+}
+
+bool storeJson(const char* json, const size_t len) {
+  auto answer = std::unique_ptr<knowledge::Answer>(new (std::nothrow) knowledge::Answer());
+  if (!answer || !answer->parse(json, len)) {
+    LOG_ERR("DSK", "Hirn: BLE frame does not parse (%u bytes)", static_cast<unsigned>(len));
+    return false;
+  }
+  return store(*answer, readStamp(), static_cast<int64_t>(time(nullptr)), nullptr);
+}
+
+std::string storedHash() {
+  const std::string hash = readStamp().hash;
+  // A field of the WREQ line: no separators, bounded.
+  if (hash.empty() || hash.size() > 16 || hash.find_first_of(":\n") != std::string::npos) return "-";
+  return hash;
+}
+
+namespace {
+bool store(const knowledge::Answer& answerRef, const Stamp& stamp, const int64_t now, const AbortCheck shouldAbort) {
+  const knowledge::Answer* answer = &answerRef;
   const std::string hash = answer->hash();
   if (hash != stamp.hash) {
     // Replace all: notes that left the window go with the rest. An aborted
@@ -102,6 +125,7 @@ bool fetchOverWifi(const std::string& monday, const int weeks, const bool force,
   writeStamp(hash, now);
   return true;
 }
+}  // namespace
 
 bool due() { return static_cast<int64_t>(time(nullptr)) - readStamp().at >= kForcedGap; }
 

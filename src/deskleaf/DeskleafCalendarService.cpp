@@ -314,6 +314,18 @@ bool applyWeekFrames(const char* body, size_t len, const std::vector<WeekEntry>&
   return ok;
 }
 
+// The Brain's notes and today's list the bridge appended (K/T frames), so the
+// device needs no Wi-Fi visit for them.
+void applyExtraFrames(const char* body, const size_t len) {
+  std::vector<WeekFrame> weeks;
+  std::vector<ExtraFrame> extras;
+  parseWeekFrames(body, len, weeks, &extras);
+  for (const ExtraFrame& e : extras) {
+    if (e.tag == 'K') hirn::storeJson(e.data, e.len);
+    if (e.tag == 'T') todos::storeList(std::string(e.data, e.len));
+  }
+}
+
 // The device clock keeps UTC until a zone is picked in Settings. While none
 // was ever chosen, the bridge's zone (the Mac's) is adopted once and saved, so
 // "today" and the sync time match the calendar the bridge sends.
@@ -500,7 +512,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     std::strncpy(bridgeTzOut, tz, 63);
     bridgeTzOut[63] = '\0';
   };
-  char line[64];
+  char line[80];
   Date today{};
   if (!localToday(today)) {
     // The window is relative to today. Without a clock, a plain REQ fetches
@@ -521,8 +533,11 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   std::vector<WeekEntry> index = loadIndex();
   const std::vector<WeekEntry> window = windowOf(today, index);
   const uint16_t millivolts = batteryMillivolts();
-  snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d\n", static_cast<unsigned long>(weekSetHash(window)),
-           static_cast<unsigned>(millivolts), window.front().monday.c_str(), kWindowWeeks);
+  // The last two fields ask the bridge for the Brain's notes and today's list
+  // when ours differ (K/T frames after the weeks).
+  snprintf(line, sizeof(line), "WREQ:%08lX:%u:%s:%d:%s:%08lX\n", static_cast<unsigned long>(weekSetHash(window)),
+           static_cast<unsigned>(millivolts), window.front().monday.c_str(), kWindowWeeks, hirn::storedHash().c_str(),
+           static_cast<unsigned long>(todos::listHash()));
   // A new firmware since the last sync counts as installed now (an OTA
   // reboots into the calendar soon after); the first sync only notes it.
   if (state.firmware != CROSSPOINT_VERSION) {
@@ -619,6 +634,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
+    applyExtraFrames(r.payload, r.payloadLen);
     if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
     Storage.remove(kLegacyPayloadPath);
     LOG_INF("DSK", "Stored week frames, %u bytes", static_cast<unsigned>(r.payloadLen));

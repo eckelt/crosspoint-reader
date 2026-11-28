@@ -50,7 +50,8 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
 
 The device keeps a window of 40 weeks (13 back, the current one, 26 ahead)
 as one file per week, and asks with
-`WREQ:<set hash>:<battery mV>:<first Monday>:<weeks>`. The set hash is FNV-1a
+`WREQ:<set hash>:<battery mV>:<first Monday>:<weeks>:<Brain hash>:<to-do hash>`.
+The set hash is FNV-1a
 over `YYYY-MM-DD:HASH8\n` per week of the window; a week's hash is FNV-1a
 over exactly the JSON bytes the bridge sent for it, 0 when it is empty. The
 bridge (deskleaf-display, `swift/Sources/DeskleafCore/WeekSync.swift`) answers
@@ -61,6 +62,13 @@ one of them, only the weeks changed since are sent; otherwise all of them. An ev
 every week it covers, and the device merges the weeks it loads without
 duplicates. Contract vectors on both sides: `test/deskleaf_calendar`,
 `WeekSyncTests.swift`.
+
+The bridge only relays what the Deskleaf worker builds: the week frames come
+from `/display/weeks`, the same bytes the device fetches over Wi-Fi without
+the bridge. When the Brain hash (the `hash` of `/display/knowledge`, `-`
+without stored notes) or the to-do hash (FNV-1a of the stored list) differs
+from the worker's, the bridge appends `K:<n>\n<JSON>\n` and `T:<n>\n<list>\n`
+after the weeks, so the device needs no Wi-Fi visit for them.
 
 The X4 Pro notes the events only it sees (sleep screen redrawn, bridge not
 found, a new firmware at the first sync after an update) in `activity.hist`
