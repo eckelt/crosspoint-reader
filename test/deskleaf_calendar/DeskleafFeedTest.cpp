@@ -115,6 +115,19 @@ static void testSendOutcome() {
   CHECK(todoActionPath(undo) == "/display/todos/a1b2c3/undo");
 }
 
+static void testChecklist() {
+  const InboxEntry e{"0mx-Haus.list", "list", 30, "Haus.list"};
+  CHECK(checklistPath(e) == "/Checklisten/Haus.txt");
+  CHECK(checklistPath({"1-x", "list", 1, "../a.list"}) == "/Checklisten/-a.txt");
+  CHECK(inboxDestination(e) == "/.crosspoint/deskleaf/list-in.txt");
+  // A new list from nothing; headings and blank lines are no items.
+  CHECK(mergeChecklist("", "# Haus\n- [ ] Sanit\xC3\xA4r anrufen\n\nBrot\n") ==
+        "- [ ] Sanit\xC3\xA4r anrufen\n- [ ] Brot\n");
+  // Ticked items stay ticked, known items are not added twice, case ignored.
+  CHECK(mergeChecklist("- [x] Brot\n- [ ] Milch", "- [ ] brot\n- Milch\n- [ ] Eier\n- Eier\n") ==
+        "- [x] Brot\n- [ ] Milch\n- [ ] Eier\n");
+}
+
 static void testSettle() {
   const TodoChange a{"aaaaaa", true};
   const TodoChange b{"bbbbbb", true};
@@ -154,6 +167,7 @@ static void testVisitDue() {
 }
 
 int runFeedTests() {
+  testChecklist();
   testSettle();
   testVisitDue();
   testInboxListing();

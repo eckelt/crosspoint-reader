@@ -169,6 +169,19 @@ std::vector<std::string> fetchInbox(const AbortCheck shouldAbort) {
       LOG_ERR("DSK", "Inbox: download of %s failed (HTTP %d)", entry.name.c_str(), HttpDownloader::lastStatus());
       continue;  // not checked off: stays on the server for the next time
     }
+    if (entry.kind == "list") {
+      // Merged into the checklist, so ticks there survive a resend.
+      const std::string target = feed::checklistPath(entry);
+      const std::string existing = Storage.exists(target.c_str()) ? Storage.readFile(target.c_str()).c_str() : "";
+      const std::string incoming = Storage.readFile(dest.c_str()).c_str();
+      Storage.ensureDirectoryExists("/Checklisten");
+      const bool written = Storage.writeFile(target.c_str(), String(feed::mergeChecklist(existing, incoming).c_str()));
+      Storage.remove(dest.c_str());
+      if (!written) {
+        LOG_ERR("DSK", "Inbox: list %s not written", entry.name.c_str());
+        continue;
+      }
+    }
     // Checked off only once the file is on the card.
     std::string ack;
     const int done = getText("/display/inbox/" + feed::percentEncodeSegment(entry.id) + "/done", ack, 64);

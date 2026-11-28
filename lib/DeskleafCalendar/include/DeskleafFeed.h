@@ -28,7 +28,16 @@ std::string sdSafeName(const std::string& name);
 
 // Where a fetched file goes: a BMP becomes /sleep.bmp, notes /Spick/<id> (the id
 // keeps the arrival order), books /Books/<name>, anything else /Inbox/<name>.
+// Lists are staged and merged (checklistPath, mergeChecklist).
 std::string inboxDestination(const InboxEntry& entry);
+
+// The checklist a "list" entry belongs to: "Haus.list" -> /Checklisten/Haus.txt.
+std::string checklistPath(const InboxEntry& entry);
+
+// `incoming` items ("- [ ] x", "- x" or plain lines) appended to the checklist
+// `existing` as open "- [ ] x" lines; items already on it (ticked or not, case
+// ignored) are left alone, so ticks survive a resend.
+std::string mergeChecklist(const std::string& existing, const std::string& incoming);
 
 // --- Daily to-do list (GET /display/todos) --------------------------------------
 

@@ -31,9 +31,9 @@ int getText(const std::string& path, std::string& body, size_t maxBytes);
 
 // Files waiting in the worker's display inbox (GET /display/inbox), saved to the
 // SD card and checked off: a .bmp becomes /sleep.bmp, books go to /Books, notes
-// to /Spick (named by their inbox id, so they sort by arrival), the rest to
-// /Inbox. Returns the names saved, in arrival order. Needs Wi-Fi up; an abort
-// ends it between files.
+// to /Spick (named by their inbox id, so they sort by arrival), lists merged
+// into /Checklisten, the rest to the names saved, in arrival order. Needs Wi-Fi
+// up; an abort ends it between files.
 std::vector<std::string> fetchInbox(AbortCheck shouldAbort = nullptr);
 
 // Disconnects and switches the radio off.

@@ -1,6 +1,7 @@
 #include "DeskleafFeed.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
@@ -92,7 +93,58 @@ std::string inboxDestination(const InboxEntry& e) {
   if (e.kind == "sleep") return "/sleep.bmp";
   if (e.kind == "note") return "/Spick/" + sdSafeName(e.id);
   if (e.kind == "book") return "/Books/" + sdSafeName(e.name);
+  if (e.kind == "list") return "/.crosspoint/deskleaf/list-in.txt";
   return "/Inbox/" + sdSafeName(e.name);
+}
+
+std::string checklistPath(const InboxEntry& e) {
+  std::string name = e.name;
+  if (name.size() > 5 && name.compare(name.size() - 5, 5, ".list") == 0) name.resize(name.size() - 5);
+  name = sdSafeName(name);
+  if (name.empty() || name[0] == '.') name = "Liste";
+  return "/Checklisten/" + name + ".txt";
+}
+
+namespace {
+std::string trimmed(const std::string& s) {
+  const size_t a = s.find_first_not_of(" \t");
+  if (a == std::string::npos) return {};
+  return s.substr(a, s.find_last_not_of(" \t") - a + 1);
+}
+
+// The item's text without "- ", "* " or a "[ ]"/"[x]" box.
+std::string itemText(const std::string& line) {
+  std::string t = trimmed(line);
+  if (t.rfind("- ", 0) == 0 || t.rfind("* ", 0) == 0) t = trimmed(t.substr(2));
+  if (t.size() >= 3 && t[0] == '[' && t[2] == ']' && (t[1] == ' ' || t[1] == 'x' || t[1] == 'X')) {
+    t = trimmed(t.substr(3));
+  }
+  return t;
+}
+
+std::string foldCase(std::string s) {
+  for (char& ch : s) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+  return s;
+}
+}  // namespace
+
+std::string mergeChecklist(const std::string& existing, const std::string& incoming) {
+  std::vector<std::string> seen;
+  forEachLine(existing, [&](const std::string& line) {
+    const std::string t = itemText(line);
+    if (!t.empty()) seen.push_back(foldCase(t));
+  });
+  std::string out = existing;
+  if (!out.empty() && out.back() != '\n') out += '\n';
+  forEachLine(incoming, [&](const std::string& line) {
+    const std::string t = itemText(line);
+    if (t.empty() || t[0] == '#') return;  // a heading is no item
+    const std::string key = foldCase(t);
+    if (std::find(seen.begin(), seen.end(), key) != seen.end()) return;
+    seen.push_back(key);
+    out += "- [ ] " + t + "\n";
+  });
+  return out;
 }
 
 bool parseTodos(const std::string& text, TodoList& out) {

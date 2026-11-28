@@ -95,6 +95,9 @@ Two home tiles use the worker over Wi-Fi (`deskleaf-feed.txt`, see above):
   title row fetches again. Notes are saved to `/Spick/<inbox id>` and checked
   off (`/done`) only once they are on the card. Notes that firmware before
   2.0.69 saved to `/Inbox` move to `/Spick` once.
+- **Checklisten** receive inbox entries of kind `list` (`<Name>.list`, one
+  item per line): the items are appended to `/Checklisten/<Name>.txt` as open
+  `- [ ]` lines; items already on the list keep their tick.
 - **Heute** shows the daily to-do list (`GET /display/todos`). A tap ticks an
   item or opens it again; taps are stored at once and sent in order
   (`/display/todos/<id>/done` or `/undo`) a few seconds later or on the next
