@@ -344,17 +344,37 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
   r.fillRect(0, 0, w, h, true);
   r.drawText(UI_12_FONT_ID, kMargin + 4, 8, title, false, EpdFontFamily::BOLD);
 
-  std::string right;
+  // One status line: when the data is from, how it came, and, after an attempt
+  // that brought nothing, which way failed: "Stand 16:25 • BT ✕ • WLAN 404".
+  // The font has no ✕, so a piece may end in a drawn cross.
+  struct Piece {
+    std::string text;
+    bool cross;
+  };
+  std::vector<Piece> pieces;
+  const bool failed = !status.statusText && !status.active && status.lastAttemptEpoch > status.lastSyncEpoch + 60;
   if (status.statusText) {
-    right = status.statusText;
-  } else if (status.lastSyncEpoch > 0) {
-    const time_t t = static_cast<time_t>(status.lastSyncEpoch);
-    struct tm lt {};
-    localtime_r(&t, &lt);
-    char buf[32];
-    const char* via = status.via == 1 ? " • BT" : status.via == 2 ? " • WLAN" : "";
-    std::snprintf(buf, sizeof(buf), "Stand %02d:%02d%s", lt.tm_hour, lt.tm_min, via);
-    right = buf;
+    pieces.push_back({status.statusText, false});
+  } else if (status.lastSyncEpoch > 0 || failed) {
+    char buf[32] = "Stand \xE2\x80\x93";
+    if (status.lastSyncEpoch > 0) {
+      const time_t t = static_cast<time_t>(status.lastSyncEpoch);
+      struct tm lt {};
+      localtime_r(&t, &lt);
+      std::snprintf(buf, sizeof(buf), "Stand %02d:%02d", lt.tm_hour, lt.tm_min);
+    }
+    if (failed) {
+      // The bridge did not answer; Wi-Fi: no known network, no answer, or the HTTP status.
+      pieces.push_back({std::string(buf) + " \xE2\x80\xA2 BT ", true});
+      char wifi[24] = "";
+      if (status.wifiResult == -1) std::snprintf(wifi, sizeof(wifi), " \xE2\x80\xA2 kein WLAN");
+      if (status.wifiResult == -2) std::snprintf(wifi, sizeof(wifi), " \xE2\x80\xA2 WLAN ");
+      if (status.wifiResult > 0) std::snprintf(wifi, sizeof(wifi), " \xE2\x80\xA2 WLAN %d", status.wifiResult);
+      if (wifi[0]) pieces.push_back({wifi, status.wifiResult == -2});
+    } else {
+      const char* via = status.via == 1 ? " \xE2\x80\xA2 BT" : status.via == 2 ? " \xE2\x80\xA2 WLAN" : "";
+      pieces.push_back({std::string(buf) + via, false});
+    }
   }
   // A running sync: its radio inside circling arrows, left of the sync time.
   int textRight = w - kMargin - 4;
@@ -364,32 +384,28 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     drawIcon(r, icon, kSyncIcon, kSyncIcon, textRight - kSyncIcon, 6, 1, false);
     textRight -= kSyncIcon + 6;
   }
-  if (!right.empty()) {
-    const int tw = r.getTextWidth(SMALL_FONT_ID, right.c_str());
-    r.drawText(SMALL_FONT_ID, textRight - tw, 10, right.c_str(), false);
+  constexpr int kCross = 8;
+  int lineW = 0;
+  for (const Piece& p : pieces) lineW += r.getTextWidth(SMALL_FONT_ID, p.text.c_str()) + (p.cross ? kCross : 0);
+  int x = textRight - lineW;
+  const int crossY = 10 + (r.getLineHeight(SMALL_FONT_ID) - kCross) / 2;
+  for (const Piece& p : pieces) {
+    r.drawText(SMALL_FONT_ID, x, 10, p.text.c_str(), false);
+    x += r.getTextWidth(SMALL_FONT_ID, p.text.c_str());
+    if (p.cross) {
+      for (int t = 0; t < 2; ++t) {
+        r.drawLine(x + t, crossY, x + kCross - 2 + t, crossY + kCross - 1, false);
+        r.drawLine(x + t, crossY + kCross - 1, x + kCross - 2 + t, crossY, false);
+      }
+      x += kCross;
+    }
   }
-  // The second status line (a failed attempt, or a notice) shares the row with
-  // the subtitle; the subtitle is shortened to end before it.
-  std::string second;
-  if (!status.statusText && !status.active && status.lastAttemptEpoch > status.lastSyncEpoch + 60) {
-    const time_t t = static_cast<time_t>(status.lastAttemptEpoch);
-    struct tm lt {};
-    localtime_r(&t, &lt);
-    // Why Wi-Fi did not step in, when it was tried: no known network, no answer, or the HTTP status.
-    char wifi[24] = "";
-    if (status.wifiResult == -1) std::snprintf(wifi, sizeof(wifi), " • kein WLAN");
-    if (status.wifiResult == -2) std::snprintf(wifi, sizeof(wifi), " • WLAN: keine Antwort");
-    if (status.wifiResult > 0) std::snprintf(wifi, sizeof(wifi), " • WLAN: %d", status.wifiResult);
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d%s", lt.tm_hour, lt.tm_min, wifi);
-    second = buf;
-  } else if (status.notice && !status.statusText) {
-    second = status.notice;
-  }
+  // A notice (e.g. an update) shares the second row with the subtitle; the
+  // subtitle is shortened to end before it.
   int subtitleRight = w - kMargin - 4;
-  if (!second.empty()) {
-    const int tw = r.getTextWidth(SMALL_FONT_ID, second.c_str());
-    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), second.c_str(), false);
+  if (status.notice && !status.statusText) {
+    const int tw = r.getTextWidth(SMALL_FONT_ID, status.notice);
+    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), status.notice, false);
     subtitleRight -= tw + 12;
   }
   const std::string sub = r.truncatedText(UI_10_FONT_ID, subtitle, subtitleRight - (kMargin + 4));
