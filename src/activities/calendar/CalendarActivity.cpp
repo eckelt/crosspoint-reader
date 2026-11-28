@@ -18,6 +18,7 @@
 #include "components/UITheme.h"
 #include "deskleaf/CalendarView.h"
 #include "deskleaf/DeskleafAutoUpdate.h"
+#include "deskleaf/DeskleafHirn.h"
 #include "fontIds.h"
 #include "util/TaskWatchdog.h"
 
@@ -113,7 +114,7 @@ void CalendarActivity::ensureLoaded(const bool force) {
   RenderLock lock;
   // Keep an opened event open if it is still there; indices change.
   int reopened = -1;
-  const bool eventOpen = view == View::Detail || view == View::Popup;
+  const bool eventOpen = view == View::Detail || view == View::Popup || view == View::Note;
   if (eventOpen && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
     const auto& open = events[detailIndex];
     for (size_t i = 0; i < incoming.size(); ++i) {
@@ -130,7 +131,10 @@ void CalendarActivity::ensureLoaded(const bool force) {
   detailPages.assign(1, -1);
   detailPage = 0;
   detailNext = -1;
+  if (view == View::Note) view = View::Detail;  // its link may be gone with the new data
   if (eventOpen && reopened < 0) view = View::Day;
+  hasHirn = reopened >= 0 && deskleaf::hirn::forEvent(events[reopened], hirnEntry);
+  linkBoxes.clear();
   loadedFirst = first;
   loadedLast = last;
   loadedValid = true;
@@ -140,8 +144,36 @@ void CalendarActivity::openDetailPage() {
   detailPages.assign(1, -1);
   detailPage = 0;
   detailNext = -1;
+  loadHirn();
   view = View::Detail;
   show();
+}
+
+void CalendarActivity::loadHirn() {
+  deskleaf::knowledge::Entry entry;
+  const bool found =
+      detailIndex >= 0 && detailIndex < static_cast<int>(events.size()) && deskleaf::hirn::forEvent(events[detailIndex], entry);
+  RenderLock lock;
+  hasHirn = found;
+  hirnEntry = std::move(entry);
+  linkBoxes.clear();
+}
+
+void CalendarActivity::openNote(const int link) {
+  deskleaf::knowledge::Entry entry;
+  if (link < 0 || link >= static_cast<int>(hirnEntry.links.size())) return;
+  if (!deskleaf::hirn::note(hirnEntry.links[link], entry)) {
+    entry.title = hirnEntry.links[link];  // listed but not fetched: show its name
+  }
+  {
+    RenderLock lock;
+    noteEntry = std::move(entry);
+    notePages.assign(1, -1);
+    notePage = 0;
+    noteNext = -1;
+  }
+  view = View::Note;
+  requestUpdate();
 }
 
 void CalendarActivity::show() {
@@ -153,6 +185,7 @@ void CalendarActivity::step(const int direction) {
   switch (view) {
     case View::Popup:
     case View::Detail:
+    case View::Note:
       return;
     case View::Day:
       if (deskleaf::view::isWeekend(cursor)) {
@@ -228,13 +261,59 @@ void CalendarActivity::loop() {
     }
     return;
   }
-  if (view == View::Detail) {
-    // Back, Confirm or a tap closes the details; Left/Right and swipes page
-    // through long notes.
+  if (view == View::Note) {
+    // Back, Confirm or a tap returns to the event; Left/Right and swipes page.
     int tx = 0;
     int ty = 0;
     if (mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture() ||
         mappedInput.wasReleased(Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
+      view = View::Detail;
+      requestUpdate();
+      return;
+    }
+    const auto swipe = mappedInput.hasTouch() ? mappedInput.wasSwipe() : MappedInputManager::SwipeDir::None;
+    const bool forward = mappedInput.wasReleased(Button::Right) || mappedInput.wasReleased(Button::Down) ||
+                         mappedInput.wasReleased(Button::PageForward) ||
+                         swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Up;
+    const bool backward = mappedInput.wasReleased(Button::Left) || mappedInput.wasReleased(Button::Up) ||
+                          mappedInput.wasReleased(Button::PageBack) ||
+                          swipe == MappedInputManager::SwipeDir::Right || swipe == MappedInputManager::SwipeDir::Down;
+    int next = -1;
+    {
+      RenderLock lock;
+      next = noteNext;
+    }
+    if (forward && next >= 0) {
+      if (notePage + 1 >= static_cast<int>(notePages.size())) notePages.push_back(next);
+      ++notePage;
+      requestUpdate();
+    } else if (backward && notePage > 0) {
+      --notePage;
+      requestUpdate();
+    }
+    return;
+  }
+  if (view == View::Detail) {
+    // A tap on a linked note opens it. Back, Confirm or any other tap closes
+    // the details; Left/Right and swipes page through long notes.
+    int tx = 0;
+    int ty = 0;
+    const bool tapped = mappedInput.wasScreenTapped(tx, ty);
+    if (tapped) {
+      int link = -1;
+      {
+        RenderLock lock;
+        for (const auto& b : linkBoxes) {
+          if (tx >= b.x && tx < b.x + b.w && ty >= b.y && ty < b.y + b.h) link = b.link;
+        }
+      }
+      if (link >= 0) {
+        openNote(link);
+        return;
+      }
+    }
+    if (mappedInput.wasReleased(Button::Back) || mappedInput.wasBackGesture() ||
+        mappedInput.wasReleased(Button::Confirm) || tapped) {
       view = View::Day;
       detailIndex = -1;
       show();
@@ -321,6 +400,7 @@ void CalendarActivity::loop() {
         break;
       case View::Popup:
       case View::Detail:
+      case View::Note:
         break;
     }
     cursor = today;
@@ -424,12 +504,14 @@ void CalendarActivity::render(RenderLock&&) {
       view_ns::dayTitle(cursor, title, sizeof(title), subtitle, sizeof(subtitle), true);
       break;
     case View::Detail:
-      title[0] = subtitle[0] = '\0';  // the detail page draws its own header
+    case View::Note:
+      title[0] = subtitle[0] = '\0';  // these pages draw their own header
       break;
   }
 
   // The detail page draws its own header; the others share the common one.
-  headerHeight = view == View::Detail ? 0 : view_ns::drawHeader(renderer, title, subtitle, status);
+  headerHeight =
+      view == View::Detail || view == View::Note ? 0 : view_ns::drawHeader(renderer, title, subtitle, status);
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int bottom = renderer.getScreenHeight() - metrics.buttonHintsHeight;
 
@@ -438,7 +520,12 @@ void CalendarActivity::render(RenderLock&&) {
                               "Uhrzeit unbekannt – Bridge auf dem Mac starten", true);
   } else if (view == View::Detail && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
     const int page = std::min(detailPage, static_cast<int>(detailPages.size()) - 1);
-    detailNext = view_ns::drawDetail(renderer, events[detailIndex], bottom, detailPages[page]);
+    detailNext = view_ns::drawDetail(renderer, events[detailIndex], bottom, detailPages[page],
+                                     hasHirn ? &hirnEntry : nullptr, page == 0 ? &linkBoxes : nullptr);
+    if (page != 0) linkBoxes.clear();
+  } else if (view == View::Note) {
+    const int page = std::min(notePage, static_cast<int>(notePages.size()) - 1);
+    noteNext = view_ns::drawNoteCard(renderer, noteEntry, bottom, notePages[page]);
   } else if (view == View::Day || view == View::Popup || view == View::Detail) {
     view_ns::drawDay(renderer, events, cursor, today, status, headerHeight, bottom, &hits);
     if (view == View::Popup && detailIndex >= 0 && detailIndex < static_cast<int>(events.size())) {
@@ -451,7 +538,7 @@ void CalendarActivity::render(RenderLock&&) {
   }
 
   const char* nextView = view == View::Day ? "Woche" : view == View::Week ? "Monat" : "Tag";
-  const auto labels = view == View::Detail  ? mappedInput.mapLabels(tr(STR_BACK), "", "<", ">")
+  const auto labels = view == View::Detail || view == View::Note ? mappedInput.mapLabels(tr(STR_BACK), "", "<", ">")
                       : view == View::Popup ? mappedInput.mapLabels(tr(STR_BACK), "Details", "", "")
                                             : mappedInput.mapLabels(tr(STR_BACK), nextView, "<", ">");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

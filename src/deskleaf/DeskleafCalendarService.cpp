@@ -25,6 +25,7 @@
 
 #include "CalendarView.h"
 #include "DeskleafAutoUpdate.h"
+#include "DeskleafHirn.h"
 #include "DeskleafNetJob.h"
 #include "DeskleafTodos.h"
 #include "DeskleafWifiSync.h"
@@ -591,6 +592,8 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       const std::string newest = autoupdate::newestRelease();
       if (!newest.empty()) state.latestFirmware = newest;
       noteInbox(state, wifisync::fetchInbox(shouldAbort));
+      // The Brain's notes for the detail view; always when the user is looking.
+      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, wifi == WifiFallback::Now);
       if (todos::wanted(isoString(today))) {
         todos::noteAttempt();
         todos::syncOverWifi(shouldAbort);
@@ -638,6 +641,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     if (wifisync::join(shouldAbort)) {
       if (inboxWaiting) noteInbox(state, wifisync::fetchInbox(shouldAbort));
       if (todosDue) todos::syncOverWifi(shouldAbort);
+      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, false);  // at most hourly
     }
     wifisync::leave();
   }

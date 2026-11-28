@@ -2,6 +2,7 @@
 // Drawing of the Deskleaf calendar views into the CrossPoint framebuffer
 // (portrait 480x800, black/white with dithered grays). No panel refresh here.
 #include <DeskleafCalendar.h>
+#include <DeskleafKnowledge.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -62,11 +63,24 @@ void fadeScreen(const GfxRenderer& r);
 // as its content. Returns the card's rectangle for tap tests.
 HitBox drawPopup(const GfxRenderer& r, const CalEvent& event, int top, int bottom);
 
+// A tappable name on the detail page: index into the Brain entry's links.
+struct LinkBox {
+  int x, y, w, h;
+  int link;
+};
+
 // The full detail page with its own header (calendar · date, title, time).
 // Long notes continue on further pages: the first page passes
 // firstNoteBlock -1, later pages the value the page before returned.
 // Returns the first note block of the next page, or -1 on the last page.
-int drawDetail(const GfxRenderer& r, const CalEvent& event, int bottom, int firstNoteBlock);
+// With `hirn`, the Brain's termin note follows the calendar notes and page 1
+// lists the notes it links as chips, whose rectangles go to `links`.
+int drawDetail(const GfxRenderer& r, const CalEvent& event, int bottom, int firstNoteBlock,
+               const knowledge::Entry* hirn = nullptr, std::vector<LinkBox>* links = nullptr);
+
+// A note linked from an event (a person, a customer): type and title in the
+// header band, its text below, paged like drawDetail.
+int drawNoteCard(const GfxRenderer& r, const knowledge::Entry& note, int bottom, int firstNoteBlock);
 
 // Monday-based week containing `day`, one row per day.
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, Date day, Date today, int top, int bottom);

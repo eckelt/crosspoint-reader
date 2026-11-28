@@ -358,6 +358,7 @@ static void testBatteryHistory() {
 }
 
 int runFeedTests();
+int runKnowledgeTests();
 
 int main() {
   testAttendees();
@@ -376,6 +377,7 @@ int main() {
   testDates();
   testWake();
   failures += runFeedTests();
+  failures += runKnowledgeTests();
   if (failures == 0) std::printf("deskleaf_calendar: all tests passed\n");
   return failures == 0 ? 0 : 1;
 }

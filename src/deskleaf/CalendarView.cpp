@@ -961,7 +961,45 @@ HitBox drawPopup(const GfxRenderer& r, const CalEvent& e, const int top, const i
   return HitBox{cardX, cardY, cardW, cardH, &e};
 }
 
-int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const int firstNoteBlock) {
+// The calendar notes, then the Brain's termin note under its own heading.
+std::vector<NoteBlock> detailBlocks(const CalEvent& e, const knowledge::Entry* hirn) {
+  std::vector<NoteBlock> blocks = parseNotes(e.notes);
+  if (!hirn || hirn->text.empty()) return blocks;
+  if (!blocks.empty()) blocks.push_back({NoteBlock::Kind::Rule, "", 0});
+  blocks.push_back({NoteBlock::Kind::Heading1, "Aus dem Hirn", 0});
+  for (NoteBlock& b : parseNotes(hirn->text)) blocks.push_back(std::move(b));
+  return blocks;
+}
+
+// The linked notes as outlined chips, wrapping; records each chip for taps.
+int drawLinkChips(const GfxRenderer& r, const std::vector<std::string>& names, const int x, int y, const int w,
+                  const int bottom, std::vector<LinkBox>* boxes) {
+  if (names.empty()) return y;
+  y += 6;
+  r.drawText(SMALL_FONT_ID, x, y, "Im Hirn", true, EpdFontFamily::BOLD);
+  y += r.getLineHeight(SMALL_FONT_ID) + 2;
+  const int lh = r.getLineHeight(UI_10_FONT_ID);
+  const int chipH = lh + 10;
+  int cx = x;
+  for (size_t i = 0; i < names.size(); ++i) {
+    const std::string label = r.truncatedText(UI_10_FONT_ID, names[i].c_str(), w - 24);
+    const int chipW = r.getTextWidth(UI_10_FONT_ID, label.c_str()) + 24;
+    if (cx > x && cx + chipW > x + w) {
+      cx = x;
+      y += chipH + 6;
+    }
+    if (y + chipH > bottom) break;
+    r.drawRoundedRect(cx, y, chipW, chipH, 2, chipH / 2, true);
+    r.drawText(UI_10_FONT_ID, cx + 12, y + 5, label.c_str(), true);
+    if (boxes) boxes->push_back({cx, y, chipW, chipH, static_cast<int>(i)});
+    cx += chipW + 8;
+  }
+  return y + chipH;
+}
+
+int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const int firstNoteBlock,
+               const knowledge::Entry* hirn, std::vector<LinkBox>* links) {
+  if (links) links->clear();
   const int w = r.getScreenWidth();
   const int x = kMargin + 8;
   const int tw = w - 2 * x;
@@ -982,7 +1020,7 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   r.drawText(UI_10_FONT_ID, x, y + 4, (dot == std::string::npos ? when : when.substr(dot + 5)).c_str(), false);
   y = headerH + 12;
 
-  const std::vector<NoteBlock> blocks = parseNotes(e.notes);
+  const std::vector<NoteBlock> blocks = detailBlocks(e, hirn);
   const int notesBottom = bottom - smallH - 4;
   const auto more = [&](int next) {
     if (next >= 0) {
@@ -1004,6 +1042,7 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
     if (others.empty() && e.numAttendees > 0) others = std::to_string(e.numAttendees) + " weitere";
     y = drawField(r, "Teilnehmer", others, x, y, tw, bottom, true);
   }
+  if (hirn) y = drawLinkChips(r, hirn->links, x, y, tw, notesBottom, links);
 
   if (blocks.empty()) return -1;
   if (y + 2 * smallH >= notesBottom) return more(0);  // notes start on page 2
@@ -1011,6 +1050,36 @@ int drawDetail(const GfxRenderer& r, const CalEvent& e, const int bottom, const 
   r.drawLine(x, y, w - x, y, true);
   y += 10;
   return more(drawNotes(r, blocks, 0, x, y, tw, notesBottom));
+}
+
+int drawNoteCard(const GfxRenderer& r, const knowledge::Entry& note, const int bottom, const int firstNoteBlock) {
+  const int w = r.getScreenWidth();
+  const int x = kMargin + 8;
+  const int tw = w - 2 * x;
+  const int smallH = r.getLineHeight(SMALL_FONT_ID);
+  const int titleH = r.getLineHeight(UI_12_FONT_ID);
+  const int titleLines =
+      std::max(1, static_cast<int>(r.wrappedText(UI_12_FONT_ID, note.title.c_str(), tw, 2, EpdFontFamily::BOLD).size()));
+  const int headerH = 10 + smallH + 4 + titleLines * titleH + 10;
+  r.fillRect(0, 0, w, headerH, true);
+  std::string top = knowledge::typeLabel(note.type);
+  top = top.empty() ? std::string("Aus dem Hirn") : top + "  \xC2\xB7  aus dem Hirn";
+  if (firstNoteBlock >= 0) top += "  \xC2\xB7  Fortsetzung";
+  r.drawText(SMALL_FONT_ID, x, 10, top.c_str(), false);
+  drawLines(r, UI_12_FONT_ID, x, 10 + smallH + 4, tw, note.title, 2, headerH, false, EpdFontFamily::BOLD);
+  const int y = headerH + 12;
+  const std::vector<NoteBlock> blocks = parseNotes(note.text);
+  const int notesBottom = bottom - smallH - 4;
+  if (blocks.empty()) {
+    r.drawText(UI_10_FONT_ID, x, y, "Keine Notizen.", true);
+    return -1;
+  }
+  const int next = drawNotes(r, blocks, std::max(0, firstNoteBlock), x, y, tw, notesBottom);
+  if (next >= 0) {
+    const char* label = "weiter \xC2\xBB";
+    r.drawText(SMALL_FONT_ID, w - x - r.getTextWidth(SMALL_FONT_ID, label), notesBottom + 2, label, true);
+  }
+  return next;
 }
 
 void drawWeek(const GfxRenderer& r, const std::vector<CalEvent>& events, const Date day, const Date today,

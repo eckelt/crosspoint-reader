@@ -25,7 +25,7 @@ class CalendarActivity final : public Activity {
   bool bypassesQuickResume() const override { return true; }
 
  private:
-  enum class View : uint8_t { Day, Week, Month, Popup, Detail };
+  enum class View : uint8_t { Day, Week, Month, Popup, Detail, Note };
 
   void step(int direction);
   void cycleView();
@@ -36,6 +36,8 @@ class CalendarActivity final : public Activity {
   void ensureLoaded(bool force);
   void show();  // ensureLoaded + requestUpdate after a view or cursor change
   void openDetailPage();
+  void loadHirn();  // the opened event's Brain note, under the render lock
+  void openNote(int link);
   int contentTop() const;
 
   std::vector<deskleaf::CalEvent> events;
@@ -62,4 +64,13 @@ class CalendarActivity final : public Activity {
   std::vector<int> detailPages{-1};
   int detailPage = 0;
   int detailNext = -1;
+  // The Brain's termin note of the opened event and the chips of its links.
+  bool hasHirn = false;
+  deskleaf::knowledge::Entry hirnEntry;
+  std::vector<deskleaf::view::LinkBox> linkBoxes;
+  // A linked note opened from the detail page, paged the same way.
+  deskleaf::knowledge::Entry noteEntry;
+  std::vector<int> notePages{-1};
+  int notePage = 0;
+  int noteNext = -1;
 };
