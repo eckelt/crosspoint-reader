@@ -343,7 +343,6 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
   const int h = 8 + r.getLineHeight(UI_12_FONT_ID) + r.getLineHeight(UI_10_FONT_ID) + 8;
   r.fillRect(0, 0, w, h, true);
   r.drawText(UI_12_FONT_ID, kMargin + 4, 8, title, false, EpdFontFamily::BOLD);
-  r.drawText(UI_10_FONT_ID, kMargin + 4, 8 + r.getLineHeight(UI_12_FONT_ID), subtitle, false);
 
   std::string right;
   if (status.statusText) {
@@ -369,7 +368,9 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     const int tw = r.getTextWidth(SMALL_FONT_ID, right.c_str());
     r.drawText(SMALL_FONT_ID, textRight - tw, 10, right.c_str(), false);
   }
-  // A later attempt that brought nothing: when the device last tried.
+  // The second status line (a failed attempt, or a notice) shares the row with
+  // the subtitle; the subtitle is shortened to end before it.
+  std::string second;
   if (!status.statusText && !status.active && status.lastAttemptEpoch > status.lastSyncEpoch + 60) {
     const time_t t = static_cast<time_t>(status.lastAttemptEpoch);
     struct tm lt {};
@@ -381,12 +382,18 @@ int drawHeader(const GfxRenderer& r, const char* title, const char* subtitle, co
     if (status.wifiResult > 0) std::snprintf(wifi, sizeof(wifi), " • WLAN: %d", status.wifiResult);
     char buf[64];
     std::snprintf(buf, sizeof(buf), "kein Kontakt %02d:%02d%s", lt.tm_hour, lt.tm_min, wifi);
-    const int tw = r.getTextWidth(SMALL_FONT_ID, buf);
-    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), buf, false);
+    second = buf;
   } else if (status.notice && !status.statusText) {
-    const int tw = r.getTextWidth(SMALL_FONT_ID, status.notice);
-    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), status.notice, false);
+    second = status.notice;
   }
+  int subtitleRight = w - kMargin - 4;
+  if (!second.empty()) {
+    const int tw = r.getTextWidth(SMALL_FONT_ID, second.c_str());
+    r.drawText(SMALL_FONT_ID, w - kMargin - 4 - tw, 10 + r.getLineHeight(SMALL_FONT_ID), second.c_str(), false);
+    subtitleRight -= tw + 12;
+  }
+  const std::string sub = r.truncatedText(UI_10_FONT_ID, subtitle, subtitleRight - (kMargin + 4));
+  r.drawText(UI_10_FONT_ID, kMargin + 4, 8 + r.getLineHeight(UI_12_FONT_ID), sub.c_str(), false);
   return h;
 }
 
