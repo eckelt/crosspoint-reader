@@ -9,12 +9,12 @@
 #include <Logging.h>
 #include <WiFi.h>
 
-#include <cctype>
 #include <cstdio>
 // clang-format on
 
 #include <HalStorage.h>
 
+#include "DeskleafFeed.h"
 #include "WifiCredentialStore.h"
 #include "util/TaskWatchdog.h"
 
@@ -125,80 +125,55 @@ SyncStatus fetchWeeks(const std::string& monday, const int weeks, std::string& b
 
 int lastHttpStatus() { return g_lastHttp; }
 
+int getText(const std::string& path, std::string& body, const size_t maxBytes) {
+  body.clear();
+  std::string token, base;
+  if (!readConfig(token, base)) return 0;
+  bool tooLarge = false;
+  HttpDownloader::fetchUrl(
+      base + path,
+      [&](const uint8_t* data, size_t len) {
+        if (body.size() + len > maxBytes) {
+          tooLarge = true;
+          return false;
+        }
+        body.append(reinterpret_cast<const char*>(data), len);
+        return true;
+      },
+      "", "", {{"Authorization", "Bearer " + token}});
+  if (tooLarge) return 0;
+  return HttpDownloader::lastStatus();
+}
+
 std::vector<std::string> fetchInbox() {
   std::vector<std::string> saved;
   std::string token, base;
   if (!readConfig(token, base)) return saved;
   const std::vector<HttpDownloader::Header> auth = {{"Authorization", "Bearer " + token}};
   std::string listing;
-  const bool listed = HttpDownloader::fetchUrl(
-      base + "/display/inbox",
-      [&](const uint8_t* data, size_t len) {
-        if (listing.size() + len > 16 * 1024) return false;
-        listing.append(reinterpret_cast<const char*>(data), len);
-        return true;
-      },
-      "", "", auth);
-  if (!listed) {
-    LOG_ERR("DSK", "Inbox: list failed (HTTP %d)", HttpDownloader::lastStatus());
+  const int status = getText("/display/inbox", listing, 16 * 1024);
+  if (status != 200) {
+    LOG_ERR("DSK", "Inbox: list failed (HTTP %d)", status);
     return saved;
   }
-  // One line per file: <id>\t<kind>\t<bytes>\t<name>
-  size_t pos = 0;
-  while (pos < listing.size()) {
-    const size_t nl = listing.find('\n', pos);
-    const std::string line = listing.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-    pos = nl == std::string::npos ? listing.size() : nl + 1;
-    const size_t t1 = line.find('\t');
-    const size_t t2 = t1 == std::string::npos ? t1 : line.find('\t', t1 + 1);
-    const size_t t3 = t2 == std::string::npos ? t2 : line.find('\t', t2 + 1);
-    if (t3 == std::string::npos) continue;
-    const std::string id = line.substr(0, t1);
-    const std::string kind = line.substr(t1 + 1, t2 - t1 - 1);
-    std::string name = line.substr(t3 + 1);
-    for (char& c : name) {
-      if (c == '/' || c == '\\') c = '-';  // the worker already strips paths; stay safe
-    }
-    if (id.empty() || name.empty()) continue;
-    std::string dest;
-    if (kind == "sleep") {
-      dest = "/sleep.bmp";
-    } else if (kind == "note") {
-      Storage.ensureDirectoryExists("/Spick");
-      std::string file = id;
-      for (char& c : file) {
-        if (c == '/' || c == '\\') c = '-';
-      }
-      dest = "/Spick/" + file;
-    } else if (kind == "book") {
-      Storage.ensureDirectoryExists("/Books");
-      dest = "/Books/" + name;
-    } else {
-      Storage.ensureDirectoryExists("/Inbox");
-      dest = "/Inbox/" + name;
-    }
-    // Ids are base36 time plus the file name: escape what a URL path cannot hold.
-    std::string escaped;
-    for (const unsigned char c : id) {
-      if (std::isalnum(c) || c == '-' || c == '.' || c == '_' || c == '~') {
-        escaped += static_cast<char>(c);
-      } else {
-        char hex[4];
-        std::snprintf(hex, sizeof(hex), "%%%02X", c);
-        escaped += hex;
-      }
-    }
-    const std::string url = base + "/display/inbox/" + escaped;
+  const auto entries = feed::parseInboxListing(listing);
+  LOG_INF("DSK", "Inbox: %u waiting", static_cast<unsigned>(entries.size()));
+  for (const feed::InboxEntry& entry : entries) {
+    const std::string dest = feed::inboxDestination(entry);
+    const size_t slash = dest.rfind('/');
+    if (slash > 0) Storage.ensureDirectoryExists(dest.substr(0, slash).c_str());
+    // The id holds spaces and UTF-8 ("Heute · Sa 28 11 .md"): one encoded path segment.
+    const std::string url = base + "/display/inbox/" + feed::percentEncodeSegment(entry.id);
     if (HttpDownloader::downloadToFile(url, dest, nullptr, nullptr, "", "", auth) != HttpDownloader::OK) {
-      LOG_ERR("DSK", "Inbox: download of %s failed (HTTP %d)", name.c_str(), HttpDownloader::lastStatus());
-      continue;  // stays in the inbox for the next time
+      LOG_ERR("DSK", "Inbox: download of %s failed (HTTP %d)", entry.name.c_str(), HttpDownloader::lastStatus());
+      continue;  // not checked off: stays on the server for the next time
     }
+    // Checked off only once the file is on the card.
     std::string ack;
-    HttpDownloader::fetchUrl(
-        url + "/done", [&](const uint8_t* data, size_t len) { ack.append(reinterpret_cast<const char*>(data), len); return ack.size() < 64; },
-        "", "", auth);
-    LOG_INF("DSK", "Inbox: %s -> %s", name.c_str(), dest.c_str());
-    saved.push_back(name);
+    const int done = getText("/display/inbox/" + feed::percentEncodeSegment(entry.id) + "/done", ack, 64);
+    if (done != 200) LOG_ERR("DSK", "Inbox: check-off of %s failed (HTTP %d)", entry.name.c_str(), done);
+    LOG_INF("DSK", "Inbox: %s -> %s", entry.name.c_str(), dest.c_str());
+    saved.push_back(entry.name);
   }
   return saved;
 }

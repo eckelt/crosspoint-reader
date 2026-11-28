@@ -10,6 +10,7 @@
 #include <cstdio>
 
 #include "components/UITheme.h"
+#include "deskleaf/DeskleafTodos.h"
 #include "deskleaf/DeskleafWifiSync.h"
 #include "fontIds.h"
 
@@ -52,9 +53,22 @@ std::string titleOf(const std::string& path, const std::string& file) {
 
 void SpickActivity::onEnter() {
   Activity::onEnter();
+  rescueInboxNotes();
   loadNotes();
   if (!files.empty()) openNote(0);
+  fetchNow();  // in the background: the stored notes show meanwhile
   requestUpdate();
+}
+
+// Firmware before 2.0.69 saved notes to /Inbox under their plain name.
+void SpickActivity::rescueInboxNotes() {
+  for (const String& f : Storage.listFiles("/Inbox", 200)) {
+    const std::string name(f.c_str());
+    if (name.size() <= 3 || name.compare(name.size() - 3, 3, ".md") != 0 || name[0] == '.') continue;
+    Storage.ensureDirectoryExists(kDir);
+    // "0-" sorts before every arrival id: rescued notes count as the oldest.
+    Storage.rename(("/Inbox/" + name).c_str(), (std::string(kDir) + "/0-" + name).c_str());
+  }
 }
 
 void SpickActivity::loadNotes() {
@@ -107,14 +121,23 @@ void SpickActivity::layout() {
       indent = 18;
       line = line.substr(2);
     }
+    uint8_t box = 0;
+    if (!bullet.empty() && line.size() >= 3 && line[0] == '[' && line[2] == ']' &&
+        (line[1] == ' ' || line[1] == 'x' || line[1] == 'X')) {
+      box = line[1] == ' ' ? 1 : 2;
+      bullet.clear();
+      indent = 28;  // room for the box
+      line = trim(line.substr(3));
+    }
     first = false;
     line = plain(line);
     const int font = style ? UI_12_FONT_ID : UI_12_FONT_ID;
     const auto ef = style ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
     const auto wrapped = renderer.wrappedText(font, line.c_str(), width - indent, 50, ef);
     for (size_t i = 0; i < wrapped.size(); ++i) {
-      Line l{wrapped[i], style, indent, 0};
+      Line l{wrapped[i], style, indent, 0, 0};
       if (i == 0) {
+        l.box = box;
         l.gapBefore = (style == 1 ? 14 : style == 2 ? 0 : 4) + pendingGap;
         pendingGap = 0;
         if (!bullet.empty()) l.text = bullet + l.text, l.indent = 0;
@@ -144,19 +167,22 @@ void SpickActivity::fetchNow() {
     message = "Kein Feed-Token auf der SD-Karte";
     return;
   }
-  fetching = true;
-  requestUpdateAndWait();
-  std::vector<std::string> saved;
-  if (deskleaf::wifisync::join(nullptr)) saved = deskleaf::wifisync::fetchInbox();
-  deskleaf::wifisync::leave();
-  fetching = false;
-  message = saved.empty() ? std::string("Keine neuen Zettel") : std::string();
-  loadNotes();
-  if (!saved.empty() && !files.empty()) openNote(0);
+  if (fetching) return;
+  fetching = deskleaf::todos::background::start(/*inbox=*/true, /*todos=*/false);
 }
 
 void SpickActivity::loop() {
   using B = MappedInputManager::Button;
+  size_t saved = 0;
+  if (fetching && deskleaf::todos::background::finished(&saved)) {
+    fetching = false;
+    message = saved == 0 ? std::string("Keine neuen Zettel") : std::string();
+    if (saved > 0) {
+      loadNotes();
+      if (!files.empty()) openNote(0);  // the newest is what was just sent
+    }
+    requestUpdate();
+  }
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {
     if (open >= 0) {
       open = -1;
@@ -172,6 +198,7 @@ void SpickActivity::loop() {
     requestUpdate();
     return;
   }
+
   if (open >= 0) {
     const int pages = static_cast<int>(pageStarts.size());
     int step = 0;
@@ -202,7 +229,14 @@ void SpickActivity::loop() {
   int tx = 0, ty = 0;
   const bool longPress = mappedInput.wasScreenLongPress(tx, ty);
   if (!longPress && !mappedInput.wasScreenTapped(tx, ty)) return;
-  if (ty < rowsTop) return;
+  if (ty < rowsTop) {
+    // The title row: fetch as Confirm does (the button hints may be hidden).
+    if (!longPress) {
+      fetchNow();
+      requestUpdate();
+    }
+    return;
+  }
   const int row = (ty - rowsTop) / rowH;
   if (row >= static_cast<int>(files.size())) return;
   if (longPress) {
@@ -225,10 +259,7 @@ void SpickActivity::render(RenderLock&&) {
   renderer.clearScreen();
   const int w = renderer.getScreenWidth();
   const int lh = renderer.getLineHeight(UI_12_FONT_ID);
-  if (fetching) {
-    renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight() / 2 - lh, "Hole neue Zettel\xE2\x80\xA6", true,
-                              EpdFontFamily::BOLD);
-  } else if (open >= 0) {
+  if (open >= 0) {
     const int first = pageStarts.empty() ? 0 : pageStarts[page];
     const int last = page + 1 < static_cast<int>(pageStarts.size()) ? pageStarts[page + 1] : static_cast<int>(lines.size());
     int y = 24;
@@ -236,6 +267,17 @@ void SpickActivity::render(RenderLock&&) {
       const Line& l = lines[i];
       if (i != first) y += l.gapBefore;
       const auto ef = l.style ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+      if (l.box) {
+        constexpr int kBox = 18;
+        const int by = y + (lh - kBox) / 2;
+        renderer.drawRect(kMargin, by, kBox, kBox, 2, true);
+        if (l.box == 2) {
+          for (int t = 0; t < 2; ++t) {
+            renderer.drawLine(kMargin + 4, by + 9 + t, kMargin + 7, by + 12 + t, true);
+            renderer.drawLine(kMargin + 7, by + 12 + t, kMargin + 14, by + 4 + t, true);
+          }
+        }
+      }
       renderer.drawText(UI_12_FONT_ID, kMargin + l.indent, y, l.text.c_str(), true, ef);
       y += lh;
       if (l.style == 2 && (i + 1 >= last || lines[i + 1].style != 2)) {
@@ -251,6 +293,8 @@ void SpickActivity::render(RenderLock&&) {
     }
   } else {
     renderer.drawText(UI_12_FONT_ID, kMargin, 24, "Spickzettel", true, EpdFontFamily::BOLD);
+    const char* action = fetching ? "Hole\xE2\x80\xA6" : "Abholen";
+    renderer.drawText(UI_10_FONT_ID, w - kMargin - renderer.getTextWidth(UI_10_FONT_ID, action), 28, action, true);
     rowsTop = 24 + lh + 20;
     renderer.drawLine(kMargin, rowsTop - 8, w - kMargin, rowsTop - 8, true);
     rowH = renderer.getLineHeight(UI_10_FONT_ID) + 28;
@@ -267,7 +311,7 @@ void SpickActivity::render(RenderLock&&) {
       renderer.drawText(SMALL_FONT_ID, kMargin, rowsTop + 12 + lh + 8, "Im Chat: \xE2\x80\x9Ezeig das auf dem X4\xE2\x80\x9C.", true);
     }
   }
-  if (!message.empty() && !fetching) {
+  if (!message.empty()) {
     renderer.drawCenteredText(SMALL_FONT_ID, renderer.getScreenHeight() - UITheme::getInstance().getMetrics().buttonHintsHeight - 40,
                               message.c_str(), true);
     message.clear();

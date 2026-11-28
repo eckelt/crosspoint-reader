@@ -25,6 +25,7 @@
 
 #include "CalendarView.h"
 #include "DeskleafAutoUpdate.h"
+#include "DeskleafTodos.h"
 #include "DeskleafWifiSync.h"
 #include "CrossPointSettings.h"
 #include "util/TaskWatchdog.h"
@@ -589,6 +590,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       const std::string newest = autoupdate::newestRelease();
       if (!newest.empty()) state.latestFirmware = newest;
       noteInbox(state, wifisync::fetchInbox());
+      if (todos::wanted(isoString(today))) todos::syncOverWifi();
     }
     wifisync::leave();
     LOG_INF("DSK", "Wi-Fi fallback: %s", syncStatusText(viaWifi));
@@ -622,10 +624,16 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   state.payloadHash = weekSetHash(windowOf(today, index));
   state.lastStatus = static_cast<uint8_t>(r.status);
-  // Files the bridge says are waiting: a short Wi-Fi visit to fetch them.
-  if (r.inboxFiles > 0 && r.status != SyncStatus::Aborted && wifisync::configured()) {
+  // A short Wi-Fi visit for files the bridge says are waiting, and for the
+  // daily to-do list (once a day, or when taps are waiting).
+  const bool inboxWaiting = r.inboxFiles > 0;
+  const bool todosDue = todos::wanted(isoString(today));
+  if ((inboxWaiting || todosDue) && r.status != SyncStatus::Aborted && wifisync::configured()) {
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
-    if (wifisync::join(shouldAbort)) noteInbox(state, wifisync::fetchInbox());
+    if (wifisync::join(shouldAbort)) {
+      if (inboxWaiting) noteInbox(state, wifisync::fetchInbox());
+      if (todosDue) todos::syncOverWifi();
+    }
     wifisync::leave();
   }
   freePayload(r);

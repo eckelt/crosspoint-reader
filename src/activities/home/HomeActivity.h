@@ -68,6 +68,8 @@ class HomeActivity final : public Activity {
     if (item == HomeMenuItem::CHECKLISTS) return i;
     ++i;
     if (item == HomeMenuItem::SPICK) return i;
+    ++i;
+    if (item == HomeMenuItem::TODAY) return i;
     return 0;
   }
 
@@ -84,7 +86,8 @@ class HomeActivity final : public Activity {
     if (idx == i++) return HomeMenuItem::CLICKER;
     if (idx == i++) return HomeMenuItem::QR_CODES;
     if (idx == i++) return HomeMenuItem::CHECKLISTS;
-    if (idx == i) return HomeMenuItem::SPICK;
+    if (idx == i++) return HomeMenuItem::SPICK;
+    if (idx == i) return HomeMenuItem::TODAY;
 #endif
     return HomeMenuItem::NONE;
   }
@@ -100,6 +103,7 @@ class HomeActivity final : public Activity {
   void onQrCodesOpen();
   void onChecklistsOpen();
   void onSpickOpen();
+  void onTodayOpen();
 
   int getMenuItemCount() const;
   bool storeCoverBuffer();    // Store frame buffer for cover image

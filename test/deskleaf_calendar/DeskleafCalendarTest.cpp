@@ -357,6 +357,8 @@ static void testBatteryHistory() {
   CHECK(acts.size() == 1 && acts[0] == "XACT:1794040705123:5;1794040800456:4\n");
 }
 
+int runFeedTests();
+
 int main() {
   testAttendees();
   testHashContract();
@@ -373,6 +375,7 @@ int main() {
   testAttendeesLine();
   testDates();
   testWake();
+  failures += runFeedTests();
   if (failures == 0) std::printf("deskleaf_calendar: all tests passed\n");
   return failures == 0 ? 0 : 1;
 }

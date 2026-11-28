@@ -74,6 +74,7 @@ const uint8_t* springboardIcon(const UIIcon icon, const std::string& label) {
   if (label == "QR-Codes") return QrCodeIcon;
   if (label == "Checklisten") return ChecklistIcon;
   if (label == "Spick") return SpickIcon;
+  if (label == "Heute") return TodayIcon;
   switch (icon) {
     case Folder:
       return FolderIcon;
@@ -134,7 +135,7 @@ int HomeActivity::getMenuItemCount() const {
     count++;
   }
   if (hasCalendarSlot()) {
-    count += 5;  // Calendar, Clicker, QR codes, checklists, Spick
+    count += 6;  // Calendar, Clicker, QR codes, checklists, Spick, today
   }
   return count;
 }
@@ -444,6 +445,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::SPICK:
         onSpickOpen();
         break;
+      case HomeMenuItem::TODAY:
+        onTodayOpen();
+        break;
       default:
         break;
     }
@@ -682,6 +686,8 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.push_back(Book);
     menuItems.push_back("Spick");
     menuIcons.push_back(Book);
+    menuItems.push_back("Heute");
+    menuIcons.push_back(Book);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
@@ -768,5 +774,11 @@ void HomeActivity::onChecklistsOpen() {
 void HomeActivity::onSpickOpen() {
 #if DESKLEAF_CALENDAR
   activityManager.goToSpick();
+#endif
+}
+
+void HomeActivity::onTodayOpen() {
+#if DESKLEAF_CALENDAR
+  activityManager.goToToday();
 #endif
 }

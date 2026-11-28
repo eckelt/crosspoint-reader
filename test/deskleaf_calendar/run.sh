@@ -12,6 +12,7 @@ fi
 out="$(mktemp -d)"
 g++ -std=gnu++2a -Wall -Wextra -Werror -Wno-maybe-uninitialized -O1 -fsanitize=address,undefined \
   -I"$root/lib/DeskleafCalendar/include" -isystem "$json" \
-  "$root/lib/DeskleafCalendar/src/DeskleafCalendar.cpp" "$root/test/deskleaf_calendar/DeskleafCalendarTest.cpp" \
+  "$root/lib/DeskleafCalendar/src/DeskleafCalendar.cpp" "$root/lib/DeskleafCalendar/src/DeskleafFeed.cpp" \
+  "$root/test/deskleaf_calendar/DeskleafCalendarTest.cpp" "$root/test/deskleaf_calendar/DeskleafFeedTest.cpp" \
   -o "$out/deskleaf_calendar_test"
 "$out/deskleaf_calendar_test"
