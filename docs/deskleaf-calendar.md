@@ -51,9 +51,8 @@ profiles (`-DDESKLEAF_CALENDAR=1`).
 The device keeps a window of 40 weeks (13 back, the current one, 26 ahead)
 as one file per week, and asks with
 `WREQ:<set hash>:<battery mV>:<first Monday>:<weeks>:<Brain hash>:<to-do hash>`.
-The set hash is FNV-1a
-over `YYYY-MM-DD:HASH8\n` per week of the window; a week's hash is FNV-1a
-over exactly the JSON bytes the bridge sent for it, 0 when it is empty. The
+The set hash is FNV-1a over `YYYY-MM-DD:HASH8\n` per week of the window; a
+week's hash is FNV-1a over exactly the JSON bytes the bridge sent for it, 0 when it is empty. The
 bridge (deskleaf-display, `swift/Sources/DeskleafCore/WeekSync.swift`) answers
 `TIME`, `TZ` and either `SAME` or `LEN[F]:<n>` with frames
 `W:<Monday>:<n>\n<JSON array>\n` for the weeks that changed (`n` = 0: empty
@@ -119,9 +118,11 @@ fetch first.
 
 ## Notes from the Brain
 
-On each Wi-Fi visit (at most hourly; at once when the calendar is open
-without the bridge) the device fetches `GET /display/knowledge` for the same
-weeks as `/display/weeks`. It stores one file per event and per linked note
+With the bridge in reach the notes come as K frames (see above). Otherwise,
+on each Wi-Fi visit (at most hourly; at most every 5 min while the calendar
+is open) the device fetches `GET /display/knowledge` without parameters: the
+worker's fixed window of last week and the four after it, the same the
+bridge relays, so both paths share one hash. It stores one file per event and per linked note
 in `/.crosspoint/deskleaf/hirn/` (`e-<hash>.txt`, `n-<hash>.txt`) and the
 answer's hash plus fetch time in `hirn-stamp.txt`; an unchanged hash leaves
 `hirn/` untouched. An event's key is its start (`YYYY-MM-DDTHH:MM`) and title.

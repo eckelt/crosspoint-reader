@@ -85,6 +85,11 @@ void noteAttempt() { writeText(kAttemptPath, std::to_string(now())); }
 bool storeList(const std::string& text) {
   feed::TodoList list;
   if (!feed::parseTodos(text, list)) return false;
+  feed::TodoList stored;
+  if (feed::parseTodos(readText(kListPath), stored) && list.date < stored.date) {
+    LOG_INF("DSK", "To-dos via bridge: %s is older than %s, kept ours", list.date.c_str(), stored.date.c_str());
+    return false;
+  }
   writeText(kListPath, text);
   std::lock_guard<std::mutex> guard(queueMutex);
   std::vector<feed::TodoChange> queue = loadQueue();

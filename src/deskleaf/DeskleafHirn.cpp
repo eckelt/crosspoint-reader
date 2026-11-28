@@ -55,15 +55,14 @@ bool readEntry(const char prefix, const std::string& key, const bool isNote, kno
 bool store(const knowledge::Answer& answer, const Stamp& stamp, int64_t now, AbortCheck shouldAbort);
 }  // namespace
 
-bool fetchOverWifi(const std::string& monday, const int weeks, const bool force, const AbortCheck shouldAbort) {
+bool fetchOverWifi(const bool force, const AbortCheck shouldAbort) {
   if (shouldAbort && shouldAbort()) return false;
   const Stamp stamp = readStamp();
   const int64_t now = static_cast<int64_t>(time(nullptr));
   if (now - stamp.at < (force ? kForcedGap : kMinInterval)) return false;
 
   std::string body;
-  const int status = wifisync::getText("/display/knowledge?monday=" + monday + "&weeks=" + std::to_string(weeks), body,
-                                       kMaxBody, shouldAbort);
+  const int status = wifisync::getText("/display/knowledge", body, kMaxBody, shouldAbort);
   if (status != 200) {
     LOG_ERR("DSK", "Hirn: fetch failed (HTTP %d)", status);
     if (!(shouldAbort && shouldAbort())) writeStamp(stamp.hash, now);
@@ -80,13 +79,13 @@ bool fetchOverWifi(const std::string& monday, const int weeks, const bool force,
   return store(*answer, stamp, now, shouldAbort);
 }
 
-bool storeJson(const char* json, const size_t len) {
+bool storeJson(const char* json, const size_t len, const AbortCheck shouldAbort) {
   auto answer = std::unique_ptr<knowledge::Answer>(new (std::nothrow) knowledge::Answer());
   if (!answer || !answer->parse(json, len)) {
     LOG_ERR("DSK", "Hirn: BLE frame does not parse (%u bytes)", static_cast<unsigned>(len));
     return false;
   }
-  return store(*answer, readStamp(), static_cast<int64_t>(time(nullptr)), nullptr);
+  return store(*answer, readStamp(), static_cast<int64_t>(time(nullptr)), shouldAbort);
 }
 
 std::string storedHash() {

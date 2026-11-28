@@ -316,12 +316,12 @@ bool applyWeekFrames(const char* body, size_t len, const std::vector<WeekEntry>&
 
 // The Brain's notes and today's list the bridge appended (K/T frames), so the
 // device needs no Wi-Fi visit for them.
-void applyExtraFrames(const char* body, const size_t len) {
+void applyExtraFrames(const char* body, const size_t len, const AbortCheck shouldAbort) {
   std::vector<WeekFrame> weeks;
   std::vector<ExtraFrame> extras;
   parseWeekFrames(body, len, weeks, &extras);
   for (const ExtraFrame& e : extras) {
-    if (e.tag == 'K') hirn::storeJson(e.data, e.len);
+    if (e.tag == 'K') hirn::storeJson(e.data, e.len, shouldAbort);
     if (e.tag == 'T') todos::storeList(std::string(e.data, e.len));
   }
 }
@@ -601,7 +601,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     state.lastWifiResult = -1;
     if (wifisync::join(shouldAbort)) {
       // The Brain's notes first, before the weeks body takes memory; always when the user is looking.
-      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, wifi == WifiFallback::Now, shouldAbort);
+      hirn::fetchOverWifi(wifi == WifiFallback::Now, shouldAbort);
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
       const int http = wifisync::lastHttpStatus();
       state.lastWifiResult = static_cast<int16_t>(http > 0 ? http : -2);
@@ -634,7 +634,7 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   if (forceRedraw) *forceRedraw = r.forceRedraw;
   if (r.status == SyncStatus::NewPayload) {
-    applyExtraFrames(r.payload, r.payloadLen);
+    applyExtraFrames(r.payload, r.payloadLen, shouldAbort);
     if (!applyWeekFrames(r.payload, r.payloadLen, window, index)) r.status = SyncStatus::StoreFailed;
     Storage.remove(kLegacyPayloadPath);
     LOG_INF("DSK", "Stored week frames, %u bytes", static_cast<unsigned>(r.payloadLen));
@@ -653,14 +653,16 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   freePayload(r);  // stored above; the Wi-Fi visit needs the memory
   const bool inboxWaiting = r.inboxFiles > 0;
   const bool todosDue = todos::wanted(isoString(today));
-  const bool hirnDue = wifi == WifiFallback::Now && hirn::due();
+  // A bridge that answered relays the Brain's notes itself (K frames).
+  const bool bridgeAnswered = r.status == SyncStatus::NewPayload || r.status == SyncStatus::Unchanged;
+  const bool hirnDue = wifi == WifiFallback::Now && !bridgeAnswered && hirn::due();
   if ((inboxWaiting || todosDue || hirnDue) && r.status != SyncStatus::Aborted && wifisync::configured()) {
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
     if (todosDue) todos::noteAttempt();  // before joining: no network in range counts too
     if (wifisync::join(shouldAbort)) {
       if (inboxWaiting) noteInbox(state, wifisync::fetchInbox(shouldAbort));
       if (todosDue) todos::syncOverWifi(shouldAbort);
-      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, hirnDue, shouldAbort);  // else hourly
+      if (!bridgeAnswered) hirn::fetchOverWifi(hirnDue, shouldAbort);  // else the bridge relays them
     }
     wifisync::leave();
   }
