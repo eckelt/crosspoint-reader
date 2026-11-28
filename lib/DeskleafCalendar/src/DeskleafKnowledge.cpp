@@ -1,7 +1,5 @@
 #include "DeskleafKnowledge.h"
 
-#include <ArduinoJson.h>
-
 #include <cstdint>
 #include <cstdio>
 
@@ -53,13 +51,20 @@ std::string fileName(const char prefix, const std::string& key) {
   return buf;
 }
 
-bool split(const char* json, const size_t len, std::string& hash, std::vector<File>& files) {
-  JsonDocument doc;
-  if (deserializeJson(doc, json, len) != DeserializationError::Ok) return false;
-  if (!doc["events"].is<JsonArrayConst>() || !doc["hash"].is<const char*>()) return false;
-  hash = doc["hash"].as<const char*>();
-  files.clear();
-  for (JsonObjectConst e : doc["events"].as<JsonArrayConst>()) {
+bool Answer::parse(const char* json, const size_t len) {
+  doc_.clear();
+  hash_.clear();
+  if (deserializeJson(doc_, json, len) != DeserializationError::Ok) return false;
+  if (!doc_["events"].is<JsonArrayConst>() || !doc_["hash"].is<const char*>()) {
+    doc_.clear();
+    return false;
+  }
+  hash_ = doc_["hash"].as<const char*>();
+  return true;
+}
+
+bool Answer::forEachFile(const std::function<bool(const File&)>& fn) const {
+  for (JsonObjectConst e : doc_["events"].as<JsonArrayConst>()) {
     const char* key = e["key"] | "";
     if (!*key) continue;
     std::string links;
@@ -67,14 +72,18 @@ bool split(const char* json, const size_t len, std::string& hash, std::vector<Fi
       if (!links.empty()) links += '\t';
       links += oneLine(l | "");
     }
-    files.push_back({fileName('e', key), oneLine(e["title"] | "") + "\n" + links + "\n" + withoutTitle(e["text"] | "")});
+    if (!fn({fileName('e', key), oneLine(e["title"] | "") + "\n" + links + "\n" + withoutTitle(e["text"] | "")})) {
+      return false;
+    }
   }
-  for (JsonPairConst n : doc["notes"].as<JsonObjectConst>()) {
+  for (JsonPairConst n : doc_["notes"].as<JsonObjectConst>()) {
     JsonObjectConst note = n.value().as<JsonObjectConst>();
     const std::string name = n.key().c_str();
     std::string title = oneLine(note["title"] | "");
     if (title.empty()) title = oneLine(name);
-    files.push_back({fileName('n', name), title + "\n" + oneLine(note["type"] | "") + "\n" + withoutTitle(note["text"] | "")});
+    if (!fn({fileName('n', name), title + "\n" + oneLine(note["type"] | "") + "\n" + withoutTitle(note["text"] | "")})) {
+      return false;
+    }
   }
   return true;
 }

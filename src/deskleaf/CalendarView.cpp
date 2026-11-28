@@ -974,12 +974,12 @@ std::vector<NoteBlock> detailBlocks(const CalEvent& e, const knowledge::Entry* h
 // The linked notes as outlined chips, wrapping; records each chip for taps.
 int drawLinkChips(const GfxRenderer& r, const std::vector<std::string>& names, const int x, int y, const int w,
                   const int bottom, std::vector<LinkBox>* boxes) {
-  if (names.empty()) return y;
+  const int lh = r.getLineHeight(UI_10_FONT_ID);
+  const int chipH = lh + 10;
+  if (names.empty() || y + 8 + r.getLineHeight(SMALL_FONT_ID) + chipH > bottom) return y;
   y += 6;
   r.drawText(SMALL_FONT_ID, x, y, "Im Hirn", true, EpdFontFamily::BOLD);
   y += r.getLineHeight(SMALL_FONT_ID) + 2;
-  const int lh = r.getLineHeight(UI_10_FONT_ID);
-  const int chipH = lh + 10;
   int cx = x;
   for (size_t i = 0; i < names.size(); ++i) {
     const std::string label = r.truncatedText(UI_10_FONT_ID, names[i].c_str(), w - 24);

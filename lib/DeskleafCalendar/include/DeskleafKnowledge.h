@@ -3,7 +3,10 @@
 // Deskleaf worker): the termin note of an event and short cards for the notes
 // it links, one level deep. Stored on the SD card as one small file per event
 // and per note, so the detail view reads only what it shows. Pure: no IO.
+#include <ArduinoJson.h>
+
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -21,10 +24,21 @@ struct File {
   std::string content;
 };
 
-// The worker's JSON as files plus its hash. False when it does not parse.
+// The worker's answer, parsed once; the caller can free the body afterwards
+// and then write the files one at a time.
 // Event file: title, then the linked names tab-separated, then the text.
 // Note file: title, then its type, then the text.
-bool split(const char* json, size_t len, std::string& hash, std::vector<File>& files);
+class Answer {
+ public:
+  bool parse(const char* json, size_t len);  // false when it does not parse
+  const std::string& hash() const { return hash_; }
+  // Calls `fn` for each file; stops early when it returns false.
+  bool forEachFile(const std::function<bool(const File&)>& fn) const;
+
+ private:
+  JsonDocument doc_;
+  std::string hash_;
+};
 
 struct Entry {
   std::string title;

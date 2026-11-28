@@ -185,10 +185,20 @@ void SpickActivity::loop() {
     fetching = false;
     RenderLock lock;  // the render task reads files, lines and pageStarts
     const size_t before = files.size();
+    const std::string reading = open >= 0 && open < static_cast<int>(files.size()) ? files[open] : std::string();
     if (saved > 0) loadNotes();
-    const bool newNotes = files.size() > before;  // a book or sleep image is no new note
+    const bool newNotes = files.size() > before;  // a book, list or sleep image is no new note
     message = !online ? std::string("Kein WLAN") : newNotes ? std::string() : std::string("Keine neuen Zettel");
-    if (newNotes) openNote(0);  // the newest is what was just sent
+    if (newNotes && reading.empty()) {
+      openNote(0);  // the newest is what was just sent
+    } else if (saved > 0 && !reading.empty()) {
+      // Indices moved: keep the note being read.
+      const auto it = std::find(files.begin(), files.end(), reading);
+      open = it == files.end() ? -1 : static_cast<int>(it - files.begin());
+    }
+    requestUpdate();
+  } else if (fetching && !deskleaf::netjob::running()) {
+    fetching = false;  // stopped by a screen pushed over this one
     requestUpdate();
   }
   if (mappedInput.wasReleased(B::Back) || mappedInput.wasBackGesture()) {

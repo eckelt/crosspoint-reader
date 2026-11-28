@@ -27,7 +27,8 @@ int lastHttpStatus();
 
 // GET <base><path> with the feed token; the body (at most maxBytes) into `body`.
 // Returns the HTTP status, 0 when there was no answer or the body was too large.
-int getText(const std::string& path, std::string& body, size_t maxBytes);
+// An abort ends the download between chunks (status 0).
+int getText(const std::string& path, std::string& body, size_t maxBytes, AbortCheck shouldAbort = nullptr);
 
 // Files waiting in the worker's display inbox (GET /display/inbox), saved to the
 // SD card and checked off: a .bmp becomes /sleep.bmp, books go to /Books, notes

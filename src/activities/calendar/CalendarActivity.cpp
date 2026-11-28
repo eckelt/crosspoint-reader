@@ -71,6 +71,7 @@ void CalendarActivity::finishSync() {
   const bool weeksChanged =
       status == deskleaf::SyncStatus::NewPayload || status == deskleaf::SyncStatus::StoreFailed;
   ensureLoaded(weeksChanged || !hadClock);
+  if (view == View::Detail) loadHirn();  // the sync may have brought the Brain's notes
   requestUpdate();
   // A newer firmware the bridge announced: install it now, the calendar is idle.
   std::string version;
@@ -131,7 +132,6 @@ void CalendarActivity::ensureLoaded(const bool force) {
   detailPages.assign(1, -1);
   detailPage = 0;
   detailNext = -1;
-  if (view == View::Note) view = View::Detail;  // its link may be gone with the new data
   if (eventOpen && reopened < 0) view = View::Day;
   hasHirn = reopened >= 0 && deskleaf::hirn::forEvent(events[reopened], hirnEntry);
   linkBoxes.clear();

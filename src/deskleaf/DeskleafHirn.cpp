@@ -8,7 +8,8 @@
 
 #include <cstdlib>
 #include <ctime>
-#include <vector>
+#include <memory>
+#include <new>
 
 #include "DeskleafWifiSync.h"
 
@@ -16,8 +17,30 @@ namespace deskleaf::hirn {
 namespace {
 constexpr const char* kDir = "/.crosspoint/deskleaf/hirn";
 constexpr const char* kStampPath = "/.crosspoint/deskleaf/hirn-stamp.txt";  // "<hash>\n<epoch>"
-constexpr size_t kMaxBody = 160 * 1024;
-constexpr int64_t kMinInterval = 3600;
+constexpr size_t kMaxBody = 96 * 1024;  // a month of termin notes; larger answers are refused
+constexpr int64_t kMinInterval = 3600;  // background visits
+constexpr int64_t kForcedGap = 5 * 60;   // the user is looking: still not on every open
+
+struct Stamp {
+  std::string hash;
+  int64_t at = 0;
+};
+
+Stamp readStamp() {
+  Stamp s;
+  if (!Storage.exists(kStampPath)) return s;
+  const std::string text = Storage.readFile(kStampPath).c_str();
+  const size_t nl = text.find('\n');
+  s.hash = text.substr(0, nl);
+  if (nl != std::string::npos) s.at = std::atoll(text.c_str() + nl + 1);
+  return s;
+}
+
+// Also after a failure, so a broken answer is not fetched again on every visit.
+void writeStamp(const std::string& hash, const int64_t at) {
+  Storage.ensureDirectoryExists("/.crosspoint/deskleaf");
+  Storage.writeFile(kStampPath, String((hash + "\n" + std::to_string(at)).c_str()));
+}
 
 std::string readText(const std::string& path) {
   if (!Storage.exists(path.c_str())) return {};
@@ -31,41 +54,56 @@ bool readEntry(const char prefix, const std::string& key, const bool isNote, kno
 }
 }  // namespace
 
-bool fetchOverWifi(const std::string& monday, const int weeks, const bool force) {
-  const std::string stamp = readText(kStampPath);
-  const size_t nl = stamp.find('\n');
-  const std::string oldHash = stamp.substr(0, nl);
-  const int64_t last = nl == std::string::npos ? 0 : std::atoll(stamp.c_str() + nl + 1);
+bool fetchOverWifi(const std::string& monday, const int weeks, const bool force, const AbortCheck shouldAbort) {
+  if (shouldAbort && shouldAbort()) return false;
+  const Stamp stamp = readStamp();
   const int64_t now = static_cast<int64_t>(time(nullptr));
-  if (!force && now - last < kMinInterval) return false;
+  if (now - stamp.at < (force ? kForcedGap : kMinInterval)) return false;
 
   std::string body;
   const int status = wifisync::getText("/display/knowledge?monday=" + monday + "&weeks=" + std::to_string(weeks), body,
-                                       kMaxBody);
+                                       kMaxBody, shouldAbort);
   if (status != 200) {
     LOG_ERR("DSK", "Hirn: fetch failed (HTTP %d)", status);
+    if (!(shouldAbort && shouldAbort())) writeStamp(stamp.hash, now);
     return false;
   }
-  std::string hash;
-  std::vector<knowledge::File> files;
-  if (!knowledge::split(body.data(), body.size(), hash, files)) {
+  // Parsed once, then the body goes: the files are written one at a time.
+  auto answer = std::unique_ptr<knowledge::Answer>(new (std::nothrow) knowledge::Answer());
+  if (!answer || !answer->parse(body.data(), body.size())) {
     LOG_ERR("DSK", "Hirn: answer does not parse (%u bytes)", static_cast<unsigned>(body.size()));
+    writeStamp(stamp.hash, now);
     return false;
   }
-  body.clear();
-  body.shrink_to_fit();
-  if (hash != oldHash) {
-    // Replace all: notes that left the window go with the rest.
+  std::string().swap(body);
+  const std::string hash = answer->hash();
+  if (hash != stamp.hash) {
+    // Replace all: notes that left the window go with the rest. An aborted
+    // write leaves the old stamp, so the next visit writes again.
     for (const String& f : Storage.listFiles(kDir, 500)) Storage.remove((std::string(kDir) + "/" + f.c_str()).c_str());
     Storage.ensureDirectoryExists(kDir);
-    for (const knowledge::File& f : files) {
-      Storage.writeFile((std::string(kDir) + "/" + f.name).c_str(), String(f.content.c_str()));
-    }
-    LOG_INF("DSK", "Hirn: %u files stored", static_cast<unsigned>(files.size()));
+    size_t written = 0;
+    bool allWritten = true;
+    const bool complete = answer->forEachFile([&](const knowledge::File& f) {
+      if (shouldAbort && shouldAbort()) return false;
+      if (Storage.writeFile((std::string(kDir) + "/" + f.name).c_str(), String(f.content.c_str()))) {
+        ++written;
+      } else {
+        allWritten = false;
+      }
+      return true;
+    });
+    LOG_INF("DSK", "Hirn: %u files stored", static_cast<unsigned>(written));
+    if (!complete) return false;  // the old stamp stays: the next visit writes again
+    // A failed write (full card): an empty hash makes the next visit write again.
+    writeStamp(allWritten ? hash : std::string(), now);
+    return allWritten;
   }
-  Storage.writeFile(kStampPath, String((hash + "\n" + std::to_string(now)).c_str()));
+  writeStamp(hash, now);
   return true;
 }
+
+bool due() { return static_cast<int64_t>(time(nullptr)) - readStamp().at >= kForcedGap; }
 
 bool forEvent(const CalEvent& event, knowledge::Entry& out) {
   return readEntry('e', knowledge::eventKey(event.start, event.subject), false, out);

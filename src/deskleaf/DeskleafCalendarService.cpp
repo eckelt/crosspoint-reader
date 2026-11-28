@@ -585,6 +585,8 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
     state.lastWifiResult = -1;
     if (wifisync::join(shouldAbort)) {
+      // The Brain's notes first, before the weeks body takes memory; always when the user is looking.
+      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, wifi == WifiFallback::Now, shouldAbort);
       viaWifi = wifisync::fetchWeeks(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, body);
       const int http = wifisync::lastHttpStatus();
       state.lastWifiResult = static_cast<int16_t>(http > 0 ? http : -2);
@@ -592,8 +594,6 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
       const std::string newest = autoupdate::newestRelease();
       if (!newest.empty()) state.latestFirmware = newest;
       noteInbox(state, wifisync::fetchInbox(shouldAbort));
-      // The Brain's notes for the detail view; always when the user is looking.
-      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, wifi == WifiFallback::Now);
       if (todos::wanted(isoString(today))) {
         todos::noteAttempt();
         todos::syncOverWifi(shouldAbort);
@@ -631,21 +631,23 @@ SyncStatus CalendarService::sync(CalendarState& state, bool* forceRedraw, AbortC
   }
   state.payloadHash = weekSetHash(windowOf(today, index));
   state.lastStatus = static_cast<uint8_t>(r.status);
-  // A short Wi-Fi visit for files the bridge says are waiting, and for the
-  // daily to-do list (once a day, or when taps are waiting).
+  // A short Wi-Fi visit for files the bridge says are waiting, for the daily
+  // to-do list (once a day, or when taps are waiting), and for the Brain's
+  // notes while the user has the calendar open.
+  freePayload(r);  // stored above; the Wi-Fi visit needs the memory
   const bool inboxWaiting = r.inboxFiles > 0;
   const bool todosDue = todos::wanted(isoString(today));
-  if ((inboxWaiting || todosDue) && r.status != SyncStatus::Aborted && wifisync::configured()) {
+  const bool hirnDue = wifi == WifiFallback::Now && hirn::due();
+  if ((inboxWaiting || todosDue || hirnDue) && r.status != SyncStatus::Aborted && wifisync::configured()) {
     g_phase = static_cast<uint8_t>(SyncPhase::Wifi);
     if (todosDue) todos::noteAttempt();  // before joining: no network in range counts too
     if (wifisync::join(shouldAbort)) {
       if (inboxWaiting) noteInbox(state, wifisync::fetchInbox(shouldAbort));
       if (todosDue) todos::syncOverWifi(shouldAbort);
-      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, false);  // at most hourly
+      hirn::fetchOverWifi(mondayIso(today, -kWifiWeeksBack), kWifiWeeks, hirnDue, shouldAbort);  // else hourly
     }
     wifisync::leave();
   }
-  freePayload(r);
   if (r.status != SyncStatus::Aborted) saveState(state);
   return r.status;
 }

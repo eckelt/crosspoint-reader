@@ -40,11 +40,20 @@ int runKnowledgeTests() {
   CHECK(fileName('e', "a") != fileName('n', "a"));
   CHECK(fileName('e', "a").size() == 14);  // "e-xxxxxxxx.txt"
 
-  std::string hash;
   std::vector<File> files;
-  CHECK(split(kJson, std::strlen(kJson), hash, files));
-  CHECK(hash == "1a2b3c4d");
-  CHECK(files.size() == 3);  // the event without a key is skipped
+  {
+    Answer a;
+    CHECK(a.parse(kJson, std::strlen(kJson)));
+    CHECK(a.hash() == "1a2b3c4d");
+    CHECK(a.forEachFile([&](const File& f) {
+      files.push_back(f);
+      return true;
+    }));
+    CHECK(files.size() == 3);  // the event without a key is skipped
+    size_t seen = 0;
+    CHECK(!a.forEachFile([&](const File&) { return ++seen < 2; }));  // stops when asked
+    CHECK(seen == 2);
+  }
 
   Entry e;
   const File* ef = find(files, fileName('e', eventKey("2026-11-12T10:00:00", "Austausch")));
@@ -68,7 +77,8 @@ int runKnowledgeTests() {
   // An event without links still has its (empty) link line.
   CHECK(parseEvent("Titel\n\nText", e) && e.links.empty() && e.text == "Text");
   CHECK(!parseEvent("", e));
-  CHECK(!split("{", 1, hash, files));
-  CHECK(!split("{\"events\":[]}", 13, hash, files));  // no hash
+  Answer bad;
+  CHECK(!bad.parse("{", 1));
+  CHECK(!bad.parse("{\"events\":[]}", 13));  // no hash
   return failures;
 }

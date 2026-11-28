@@ -125,7 +125,7 @@ SyncStatus fetchWeeks(const std::string& monday, const int weeks, std::string& b
 
 int lastHttpStatus() { return g_lastHttp; }
 
-int getText(const std::string& path, std::string& body, const size_t maxBytes) {
+int getText(const std::string& path, std::string& body, const size_t maxBytes, const AbortCheck shouldAbort) {
   body.clear();
   std::string token, base;
   if (!readConfig(token, base)) return 0;
@@ -133,6 +133,10 @@ int getText(const std::string& path, std::string& body, const size_t maxBytes) {
   HttpDownloader::fetchUrl(
       base + path,
       [&](const uint8_t* data, size_t len) {
+        if (shouldAbort && shouldAbort()) {
+          tooLarge = true;  // reported like an oversized body: no answer
+          return false;
+        }
         if (body.size() + len > maxBytes) {
           tooLarge = true;
           return false;
@@ -144,6 +148,15 @@ int getText(const std::string& path, std::string& body, const size_t maxBytes) {
   if (tooLarge) return 0;
   return HttpDownloader::lastStatus();
 }
+
+namespace {
+// readFileToString refuses empty files; an emptied checklist is still one.
+bool isEmptyFile(const std::string& path) {
+  HalFile file;
+  if (!Storage.openFileForRead("DSK", path, file)) return false;
+  return !file.isDirectory() && file.fileSize() == 0;
+}
+}  // namespace
 
 std::vector<std::string> fetchInbox(const AbortCheck shouldAbort) {
   std::vector<std::string> saved;
@@ -172,7 +185,13 @@ std::vector<std::string> fetchInbox(const AbortCheck shouldAbort) {
     if (entry.kind == "list") {
       // Merged into the checklist, so ticks there survive a resend.
       const std::string target = feed::checklistPath(entry);
-      const std::string existing = Storage.exists(target.c_str()) ? Storage.readFile(target.c_str()).c_str() : "";
+      std::string existing;
+      if (Storage.exists(target.c_str()) && !Storage.readFileToString("DSK", target, 64 * 1024, existing) &&
+          !isEmptyFile(target)) {
+        LOG_ERR("DSK", "Inbox: list %s not readable, kept on the server", entry.name.c_str());
+        Storage.remove(dest.c_str());
+        continue;  // a failed read must not wipe the ticks
+      }
       const std::string incoming = Storage.readFile(dest.c_str()).c_str();
       Storage.ensureDirectoryExists("/Checklisten");
       const bool written = Storage.writeFile(target.c_str(), String(feed::mergeChecklist(existing, incoming).c_str()));

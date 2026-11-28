@@ -110,6 +110,9 @@ void TodayActivity::loop() {
     syncing = false;
     reload();
     requestUpdate();
+  } else if (syncing && !deskleaf::netjob::running()) {
+    syncing = false;  // stopped by a screen pushed over this one; its result is gone
+    syncSoon(0);
   }
   if (!syncing && syncAt != 0 && static_cast<long>(millis() - syncAt) >= 0) {
     if (deskleaf::netjob::start(/*inbox=*/false, /*todos=*/true)) {

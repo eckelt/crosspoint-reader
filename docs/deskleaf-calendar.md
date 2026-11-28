@@ -84,15 +84,16 @@ Files in `/.crosspoint/deskleaf/` on the SD card: `weeks/<Monday>.json`,
 app loads only the weeks its view shows; the sleep screen loads today's week.
 The to-do list adds `todos.txt` (the last list from the worker),
 `todo-queue.txt` (taps not yet sent) and `todo-attempt.txt` (time of the last
-Wi-Fi visit for it); `spick-rescued` marks the one-time move of old notes.
+Wi-Fi visit for it); `spick-rescued` marks the one-time move of old notes;
+`hirn/` and `hirn-stamp.txt` hold the Brain's notes (see below).
 
 ## Spick and Heute
 
 Two home tiles use the worker over Wi-Fi (`deskleaf-feed.txt`, see above):
 
 - **Spick** shows Markdown notes from the display inbox
-  (`GET /display/inbox`). Opening it fetches in the background; a tap on the
-  title row fetches again. Notes are saved to `/Spick/<inbox id>` and checked
+  (`GET /display/inbox`). Opening it fetches in the background; Confirm or a
+  tap on the title row fetches again. Notes are saved to `/Spick/<inbox id>` and checked
   off (`/done`) only once they are on the card. Notes that firmware before
   2.0.69 saved to `/Inbox` move to `/Spick` once.
 - **Checklisten** receive inbox entries of kind `list` (`<Name>.list`, one
@@ -101,11 +102,27 @@ Two home tiles use the worker over Wi-Fi (`deskleaf-feed.txt`, see above):
 - **Heute** shows the daily to-do list (`GET /display/todos`). A tap ticks an
   item or opens it again; taps are stored at once and sent in order
   (`/display/todos/<id>/done` or `/undo`) a few seconds later or on the next
-  Wi-Fi visit, then the list is fetched again. The calendar sync also fetches
+  Wi-Fi visit, then the list is fetched again; Confirm sends and fetches at
+  once. The calendar sync also fetches
   the list once a day or when taps wait, at most every 15 min (taps) or 3 h.
 
 Only one task drives Wi-Fi: screen changes and deep sleep stop a running
 fetch first.
+
+## Notes from the Brain
+
+On each Wi-Fi visit (at most hourly; at once when the calendar is open
+without the bridge) the device fetches `GET /display/knowledge` for the same
+weeks as `/display/weeks`. It stores one file per event and per linked note
+in `/.crosspoint/deskleaf/hirn/` (`e-<hash>.txt`, `n-<hash>.txt`) and the
+answer's hash plus fetch time in `hirn-stamp.txt`; an unchanged hash leaves
+`hirn/` untouched. An event's key is its start (`YYYY-MM-DDTHH:MM`) and title.
+
+The event detail page shows the termin note under "Aus dem Hirn" after the
+calendar notes, and the notes it links (people, customers) as chips under
+"Im Hirn". A tap on a chip opens that note's card; Back, Confirm or a tap
+returns to the event.
+Only one level: a card links nowhere.
 
 ## Updates
 
